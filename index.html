@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f4d22">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Crect width=%2216%22 height=%2216%22 rx=%223%22 fill=%22%232fa84f%22/%3E%3Ccircle cx=%228%22 cy=%228%22 r=%224%22 fill=%22%23f5d02a%22/%3E%3C/svg%3E">
+<title>LeoOS 0.2 – in your browser</title>
+<style>
+  :root { --g1:#3db85c; --g2:#0b471e; --g3:#17702f; --ink:#eaffef; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; background: linear-gradient(#1f8a3c, #08331a) fixed; color: var(--ink);
+               font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { padding: 14px 16px 6px; text-align: center; }
+  h1 { margin: 0; font: 700 28px/1.1 "Courier New", monospace; letter-spacing: 1px; text-shadow: 2px 2px 0 #06260f; }
+  h1 span { color: #f5d02a; }
+  header p { margin: 4px 0 0; opacity: .85; font-size: 14px; }
+  #wrap { max-width: 1024px; margin: 8px auto; padding: 0 6px; }
+  #stage { position: relative; background: #000; border: 3px solid #0e4d22; border-radius: 10px; overflow: hidden;
+           box-shadow: 0 8px 24px rgba(0,0,0,.45); aspect-ratio: 4 / 3; display: flex; align-items: center; justify-content: center; }
+  #screen_container { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; touch-action: none; }
+  #screen_container canvas { width: 100%; height: auto; max-height: 100%; image-rendering: auto; touch-action: none; display: none; }
+  #screen_container .text { white-space: pre; font: 14px/14px monospace; color: #ccc; transform-origin: center; }
+  #loading { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+             background: radial-gradient(#1f8a3c, #0b471e); text-align: center; padding: 20px; z-index: 2; }
+  #loading .logo { font: 700 44px "Courier New", monospace; text-shadow: 3px 3px 0 #06260f; }
+  #loading .bar { width: min(280px, 70%); height: 10px; background: #0a3517; border-radius: 6px; margin: 14px 0 8px; overflow: hidden; }
+  #loading .bar div { height: 100%; width: 0; background: #f5d02a; transition: width .2s; }
+  #controls { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin: 12px 0; }
+  button { font: 600 16px system-ui, sans-serif; color: #fff; background: linear-gradient(#37b056, #1c7536); border: 1px solid #0b471e;
+           border-radius: 10px; padding: 12px 16px; min-width: 110px; box-shadow: 0 2px 0 #06260f; cursor: pointer; }
+  button:active { transform: translateY(1px); box-shadow: none; }
+  button.secondary { background: linear-gradient(#2a7d44, #134d26); }
+  #kbd { position: absolute; left: -1000px; top: 0; width: 10px; height: 10px; opacity: 0; font-size: 16px; }
+  .help { max-width: 640px; margin: 0 auto 30px; padding: 0 16px; font-size: 14px; opacity: .9; }
+  .help li { margin: 4px 0; }
+  /* "fullscreen" that also works on iPhone, where the Fullscreen API isn't available */
+  body.fs header, body.fs .help { display: none; }
+  body.fs #wrap { max-width: none; margin: 0; padding: 0; }
+  body.fs #stage { border: 0; border-radius: 0; height: calc(100dvh - 70px); aspect-ratio: auto; }
+  body.fs #controls { margin: 6px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Leo<span>OS</span> 0.2</h1>
+  <p>A tiny hobby operating system, running in an x86 emulator in your browser</p>
+</header>
+
+<div id="wrap">
+  <div id="stage">
+    <div id="screen_container">
+      <div class="text"></div>
+      <canvas></canvas>
+    </div>
+    <div id="loading">
+      <div class="logo">Leo<span style="color:#f5d02a">OS</span></div>
+      <div class="bar"><div id="progress"></div></div>
+      <div id="status">Loading the emulator…</div>
+    </div>
+  </div>
+
+  <div id="controls">
+    <button id="btn-kbd">⌨️ Keyboard</button>
+    <button id="btn-restart" class="secondary">↻ Restart</button>
+    <button id="btn-fs" class="secondary">⛶ Fullscreen</button>
+  </div>
+  <input id="kbd" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" aria-label="Keyboard input for LeoOS">
+</div>
+
+<div class="help">
+  <ul>
+    <li><b>Tap</b> to click. <b>Drag</b> with your finger to move windows or draw in Paint.</li>
+    <li>Tap <b>Keyboard</b> to type into the Terminal, Notepad or Calculator.</li>
+    <li>Try the Terminal: <code>help</code>, <code>uptime</code>, <code>calc (6+1)*6</code>, <code>colour yellow</code>.</li>
+    <li>On a computer you can just use your mouse and keyboard. LeoOS boots in a few seconds.</li>
+  </ul>
+</div>
+
+<script src="v86/libv86.js"></script>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const canvas = document.querySelector("#screen_container canvas");
+const loading = $("loading"), statusEl = $("status"), progress = $("progress");
+
+const emulator = new V86({
+  wasm_path: "v86/v86.wasm",
+  memory_size: 128 * 1024 * 1024,
+  vga_memory_size: 8 * 1024 * 1024,
+  screen_container: $("screen_container"),
+  bios: { url: "bios/seabios.bin" },
+  vga_bios: { url: "bios/vgabios.bin" },
+  cdrom: { url: "leo-os.iso" },
+  boot_order: 0x123,             // CD-ROM first
+  disable_mouse: true,           // we drive the PS/2 mouse ourselves (works for touch and mouse)
+  autostart: true,
+});
+
+emulator.add_listener("download-progress", (e) => {
+  if (e.total) {
+    progress.style.width = Math.round(100 * e.loaded / e.total) + "%";
+    statusEl.textContent = "Downloading " + (e.file_name || "files").split("/").pop() + "… " + Math.round(100 * e.loaded / e.total) + "%";
+  }
+});
+emulator.add_listener("emulator-ready", () => { statusEl.textContent = "Booting LeoOS…"; progress.style.width = "100%"; });
+emulator.add_listener("emulator-started", () => { setTimeout(() => loading.style.display = "none", 600); });
+
+/* Scale the text-mode screen (GRUB menu) to fit; the canvas scales with CSS. */
+const textEl = document.querySelector("#screen_container .text");
+function fitText() {
+  if (!textEl.offsetWidth) return;
+  const stage = $("stage"), s = Math.min(stage.clientWidth / textEl.offsetWidth, stage.clientHeight / textEl.offsetHeight, 2);
+  textEl.style.transform = "scale(" + s + ")";
+}
+emulator.add_listener("screen-set-size", () => setTimeout(fitText, 50));
+addEventListener("resize", fitText);
+
+/* ---------------- Touch / mouse -> PS/2 mouse ----------------
+ * The PS/2 mouse only reports relative movement, so we track where the guest cursor
+ * should be and send the difference. A large move to the top-left re-syncs it. */
+let cur = null;                 // estimated guest cursor position (guest pixels)
+function guestPoint(ev) {
+  const r = canvas.getBoundingClientRect();
+  return [ (ev.clientX - r.left) * canvas.width / r.width, (ev.clientY - r.top) * canvas.height / r.height ];
+}
+function sendDelta(dx, dy) {     // PS/2 packets are limited, so send small steps
+  dx = Math.round(dx); dy = Math.round(dy);
+  while (dx || dy) {
+    const sx = Math.max(-100, Math.min(100, dx)), sy = Math.max(-100, Math.min(100, dy));
+    emulator.bus.send("mouse-delta", [sx, -sy]);  // PS/2: +y is up
+    dx -= sx; dy -= sy;
+  }
+}
+function moveTo(x, y) {
+  x = Math.max(0, Math.min(canvas.width - 1, x)); y = Math.max(0, Math.min(canvas.height - 1, y));
+  if (!cur) { sendDelta(-4000, -4000); cur = [0, 0]; }
+  sendDelta(x - cur[0], y - cur[1]);
+  cur = [x, y];
+}
+let down = false;
+canvas.addEventListener("pointerdown", (ev) => {
+  ev.preventDefault();
+  canvas.setPointerCapture(ev.pointerId);
+  const [x, y] = guestPoint(ev);
+  moveTo(x, y);
+  down = true;
+  emulator.bus.send("mouse-click", [true, false, false]);   // queued after the movement packets
+});
+canvas.addEventListener("pointermove", (ev) => {
+  if (ev.pointerType !== "mouse" && !down) return;
+  ev.preventDefault();
+  const [x, y] = guestPoint(ev);
+  moveTo(x, y);
+});
+function release(ev) {
+  if (!down) return;
+  ev.preventDefault();
+  down = false;
+  emulator.bus.send("mouse-click", [false, false, false]);
+}
+canvas.addEventListener("pointerup", release);
+canvas.addEventListener("pointercancel", release);
+canvas.addEventListener("contextmenu", (ev) => ev.preventDefault());
+emulator.add_listener("emulator-started", () => { cur = null; });
+
+/* ---------------- On-screen keyboard ----------------
+ * A hidden input brings up the phone keyboard; what's typed is forwarded as PS/2
+ * scancodes. LeoOS defaults to a UK layout, so a few symbols are mapped by hand. */
+const kbd = $("kbd");
+const SHIFT = 0x2A;
+const ukSpecial = { '"': [SHIFT, 0x03], "@": [SHIFT, 0x28], "#": [0x2B], "~": [SHIFT, 0x2B],
+                    "\\": [0x56], "|": [SHIFT, 0x56], "£": [SHIFT, 0x04] };
+function press(codes) {          // press keys in order, release in reverse
+  const seq = codes.slice();
+  for (let i = codes.length - 1; i >= 0; i--) seq.push(codes[i] | 0x80);
+  emulator.keyboard_send_scancodes(seq);
+}
+function typeText(t) {
+  for (const ch of t) {
+    if (ch === "\n") press([0x1C]);
+    else if (ukSpecial[ch]) press(ukSpecial[ch]);
+    else emulator.keyboard_send_text(ch);
+  }
+}
+function resetInput() { kbd.value = "  "; kbd.setSelectionRange(2, 2); }
+kbd.addEventListener("beforeinput", (ev) => {
+  if (ev.inputType === "deleteContentBackward") press([0x0E]);
+  else if (ev.inputType === "insertLineBreak" || ev.inputType === "insertParagraph") press([0x1C]);
+  else if (ev.data) typeText(ev.data.replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"'));
+  ev.preventDefault();
+  resetInput();
+});
+kbd.addEventListener("keydown", (ev) => {         // keys that don't produce beforeinput
+  const map = { Enter: [0x1C], Backspace: [0x0E], Escape: [0x01], Tab: [0x0F],
+                ArrowUp: [0xE0, 0x48], ArrowDown: [0xE0, 0x50], ArrowLeft: [0xE0, 0x4B], ArrowRight: [0xE0, 0x4D] };
+  if (ev.key in map && ev.keyCode !== 229) {
+    ev.preventDefault();
+    const c = map[ev.key];
+    if (c[0] === 0xE0) emulator.keyboard_send_scancodes([0xE0, c[1], 0xE0, c[1] | 0x80]);
+    else press(c);
+  }
+});
+$("btn-kbd").addEventListener("click", () => { resetInput(); kbd.focus({ preventScroll: true }); });
+
+/* ---------------- Buttons ---------------- */
+$("btn-restart").addEventListener("click", () => { cur = null; emulator.restart(); });
+$("btn-fs").addEventListener("click", async () => {
+  const el = document.documentElement;
+  if (document.fullscreenElement || document.body.classList.contains("fs")) {
+    document.body.classList.remove("fs");
+    if (document.fullscreenElement) document.exitFullscreen();
+  } else {
+    document.body.classList.add("fs");
+    try { if (el.requestFullscreen) await el.requestFullscreen({ navigationUI: "hide" }); } catch (e) { /* iOS: CSS-only */ }
+  }
+  setTimeout(fitText, 200);
+});
+document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement) document.body.classList.remove("fs"); });
+
+window.emulator = emulator;     // handy for debugging from the console
+</script>
+</body>
+</html>
