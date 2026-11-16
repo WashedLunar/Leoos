@@ -35,7 +35,7 @@ static void place_food(void) {
 
 void snake_init(void) {
     len = 4; dir = RIGHT; state = READY; score = 0; queued = 0;
-    for (int i = 0; i < len; i++) { sx[i] = (uint8_t)(6 - i); sy[i] = SNAKE_ROWS / 2; }
+    for (int i = 0; i < len; i++) { sx[i] = (uint8_t)(SNAKE_COLS / 2 - i); sy[i] = SNAKE_ROWS / 2; }
     rng ^= timer_ticks() * 2654435761u; if (!rng) rng = 1;
     place_food();
 }
@@ -52,13 +52,21 @@ static void turn(int d) {
     if (queued < 2) queue[queued++] = d;
 }
 
-static int step_ticks(void) { int t = 15 - score / 3; return t < 7 ? 7 : t; }   /* speeds up as you eat */
+/* Starts gently (0.22 s per step) and speeds up as you eat. 0.3 started at 0.15 s, which,
+ * with the walls, ended most games within 2 seconds in the browser. */
+static int step_ticks(void) { int t = 22 - score / 2; return t < 8 ? 8 : t; }
 
 static void step(void) {
     if (queued) { dir = queue[0]; queue[0] = queue[1]; queued--; }
     int nx = sx[0] + DX[dir], ny = sy[0] + DY[dir];
     bool eat = nx == food_x && ny == food_y;
-    if (nx < 0 || ny < 0 || nx >= SNAKE_COLS || ny >= SNAKE_ROWS || on_snake(nx, ny, eat ? len : len - 1)) {
+    /* the walls wrap round: leave on one side, come back on the other. Only biting yourself ends the game */
+    if (nx < 0) nx = SNAKE_COLS - 1;
+    if (nx >= SNAKE_COLS) nx = 0;
+    if (ny < 0) ny = SNAKE_ROWS - 1;
+    if (ny >= SNAKE_ROWS) ny = 0;
+    eat = nx == food_x && ny == food_y;
+    if (on_snake(nx, ny, eat ? len : len - 1)) {
         state = OVER;
         if (score > best) best = score;
         return;
@@ -145,7 +153,7 @@ void snake_draw(int x, int y, int w, int h, bool focused) {
     /* control panel */
     gfx_text(x + SNAKE_PANEL + 2, y + SNAKE_BY, "Controls", TEXT_DARK, TRANSPARENT, 1);
     gfx_text(x + SNAKE_PANEL + 2, y + SNAKE_BY + 18, "tap the arrows", RGB(0x40, 0x60, 0x48), TRANSPARENT, 1);
-    gfx_text(x + SNAKE_PANEL + 2, y + SNAKE_BY + 34, "or use the keys", RGB(0x40, 0x60, 0x48), TRANSPARENT, 1);
+    gfx_text(x + SNAKE_PANEL + 2, y + SNAKE_BY + 34, "Walls wrap round!", RGB(0x40, 0x60, 0x48), TRANSPARENT, 1);
     for (int i = 0; i < 4; i++) {
         int ax, ay; pad_rect(i, &ax, &ay);
         gfx_bevel(x + ax, y + ay, PAD - 4, PAD - 4, RGB(0x3B, 0xB0, 0x5A), pressed == i);
