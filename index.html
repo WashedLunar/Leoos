@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0f4d22">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Crect width=%2216%22 height=%2216%22 rx=%223%22 fill=%22%232fa84f%22/%3E%3Ccircle cx=%228%22 cy=%228%22 r=%224%22 fill=%22%23f5d02a%22/%3E%3C/svg%3E">
-<title>LeoOS 0.3 – in your browser</title>
+<title>LeoOS 0.3.1 – in your browser</title>
 <style>
   :root { --g1:#3db85c; --g2:#0b471e; --g3:#17702f; --ink:#eaffef; }
   * { box-sizing: border-box; }
@@ -43,7 +43,7 @@
 </head>
 <body>
 <header>
-  <h1>Leo<span>OS</span> 0.3</h1>
+  <h1>Leo<span>OS</span> 0.3.1</h1>
   <p>A tiny hobby operating system, running in an x86 emulator in your browser</p>
 </header>
 
@@ -73,9 +73,9 @@
     <li><b>Tap</b> to click. <b>Drag</b> with your finger to move windows or draw in Paint.</li>
     <li>Tap <b>Keyboard</b> to type into the window you last tapped (Terminal, Notepad or Calculator).</li>
     <li><b>New in 0.3:</b> each window has a <b>_</b> button to minimise it. Tap its button on the taskbar to bring it back.
-        Drag the corner grip to resize Terminal, Paint or Notepad.</li>
+        Drag the green corner tab to resize Terminal, Paint or Notepad.</li>
     <li><b>Snake:</b> tap the big green arrows next to the board (or tap the board on the side you want to turn to).
-        On a computer, use the arrow keys or WASD. Tap <b>New game</b> to play again.</li>
+        On a computer, use the arrow keys or WASD. The walls wrap round, so only biting your own tail ends the game. Tap <b>New game</b> to play again.</li>
     <li><b>Minesweeper:</b> tap a square to dig. Turn on <b>Flag</b> to place flags by tapping, and tap the smiley to start a new game.</li>
     <li><b>Notepad</b> can Save and Open files. Then try <code>ls</code>, <code>cat notes.txt</code> and <code>rm</code> in the Terminal.
         Files live in memory, so they're gone when you restart.</li>
@@ -140,7 +140,9 @@ function sendDelta(dx, dy) {     // PS/2 packets are limited, so send small step
   }
 }
 function moveTo(x, y) {
-  x = Math.max(0, Math.min(canvas.width - 1, x)); y = Math.max(0, Math.min(canvas.height - 1, y));
+  // Whole guest pixels only: the PS/2 mouse can't move by a fraction, and keeping a fractional
+  // estimate made the real cursor drift away from the finger a little more with every move.
+  x = Math.round(Math.max(0, Math.min(canvas.width - 1, x))); y = Math.round(Math.max(0, Math.min(canvas.height - 1, y)));
   if (!cur) { sendDelta(-4000, -4000); cur = [0, 0]; }
   sendDelta(x - cur[0], y - cur[1]);
   cur = [x, y];

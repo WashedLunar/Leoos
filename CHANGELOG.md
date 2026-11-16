@@ -1,3 +1,11 @@
+# LeoOS 0.3.1 – Fixes
+
+Starlink tested 0.3 on the live site and found three problems. They're all fixed:
+
+- **Resizing windows now works reliably.** The corner grip was small (18 px, about 9 px on a laptop screen), and the web page's touch and mouse code let the LeoOS cursor drift a few pixels further from your finger with every move, because it kept fractions of a pixel the mouse can't move. Together that made it easy to miss the grip. The grip is now a bigger green tab you can grab from slightly inside or outside the corner, and the cursor no longer drifts.
+- **Snake doesn't end straight away any more.** The snake started moving at 0.15 s per step and died at the first wall, so with the delay of tapping in the browser most games ended in about 2 seconds with a score of 0. The walls now wrap round, the snake starts in the middle, and it begins slower (0.22 s per step) and speeds up as you eat. Only biting your own tail ends the game.
+- **Minesweeper's New game turns Flag mode off.**
+
 # LeoOS 0.3 – Release notes
 
 LeoOS 0.3 builds on the 0.2 desktop with better window handling, saving in Notepad and two new games. It still boots straight to the green desktop and runs in your phone's browser.

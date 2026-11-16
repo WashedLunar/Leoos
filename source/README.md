@@ -1,4 +1,4 @@
-# LeoOS 0.3
+# LeoOS 0.3.1
 
 > In this repo the prebuilt ISO is one folder up, at [`../leo-os.iso`](../leo-os.iso). To play it in your browser, go to https://washedlunar.github.io/Leoos/
 
@@ -7,6 +7,18 @@ with a little NASM assembly. It boots into a **green desktop**. It has windows y
 a mouse, a taskbar with a Start menu, and seven apps, including two games. The 0.1 text-mode shell is still in the GRUB menu.
 
 ![LeoOS 0.3 desktop](screenshots/20-desktop-0.3.png)
+
+## What's new in 0.3.1 (fixes from Starlink's testing)
+
+- **Resize is easier to grab:** the corner grip is now a bigger green tab. You can grab it from up to 34 px inside the
+  corner or 12 px outside it, so a finger or a slightly-off mouse still catches it. The web page also had a bug that let
+  the guest cursor drift a few pixels away from the finger over time. It's fixed, so taps now land exactly where you tap
+- **Snake no longer ends straight away:** the walls wrap round (go off one side, come back on the other), the snake
+  starts in the middle of the board, and the first speed is gentler (0.22 s per step, speeding up as you eat). Only biting
+  your own tail ends the game
+- **Minesweeper:** New game switches Flag mode back off
+
+![resize grip](screenshots/30-resize-grip-0.3.1.png)
 
 ## What's new in 0.3
 
@@ -20,7 +32,7 @@ a mouse, a taskbar with a Start menu, and seven apps, including two games. The 0
   part around the cursor. Calculator, Snake, Minesweeper and About keep a fixed size
 - **Files:** a small RAM filesystem (16 files, up to 4000 bytes each). Notepad has **New**, **Open** and **Save** buttons,
   and the Terminal has `ls`, `cat`, `rm` and `write`. There's no disk driver yet, so **files are lost when you restart**
-- **Snake:** arrow keys or WASD, or tap the big on-screen arrows (or tap the board on the side you want to turn to),
+- **Snake** (walls wrap round since 0.3.1): arrow keys or WASD, or tap the big on-screen arrows (or tap the board on the side you want to turn to),
   so it plays on a phone. The PIT timer moves the snake, and it speeds up as you eat. It keeps your score and best score,
   and has a game-over screen with New game. It pauses when another window is focused
 - **Minesweeper** (written by Luna, integrated by Nova): 9x9 with 10 mines, and your first click is never a mine.

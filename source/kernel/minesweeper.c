@@ -20,6 +20,7 @@ void mines_init(void) {
     memset(mine, 0, sizeof mine); memset(open_, 0, sizeof open_);
     memset(flag, 0, sizeof flag); memset(near, 0, sizeof near);
     state = ST_READY; flags_left = MINES_COUNT; opened = 0; boom_r = boom_c = -1;
+    flag_mode = false;                 /* a new game always starts in dig mode */
 }
 
 /* Mines are placed on the first click, never on or next to that cell. */

@@ -16,7 +16,9 @@
 #define MENU_SYS  30
 #define TBTN_W    22          /* title bar button */
 #define TBTN_H    18
-#define GRIP      18          /* resize grip in the bottom-right corner */
+#define GRIP      22          /* resize grip drawn in the bottom-right corner */
+#define GRIP_IN   34          /* ...but it can be grabbed this far inside the corner */
+#define GRIP_OUT  12          /* ...and this far outside it (easy to hit with a finger) */
 
 /* Leo's green theme */
 #define C_DESK_TOP    RGB(0x3D, 0xB8, 0x5C)
@@ -217,7 +219,7 @@ static void draw_title_button(int a, int b, bool focused) {
 static bool in_grip(int a, int px, int py) {
     if (!apps[a].resizable || wins[a].maximised) return false;
     int x = wins[a].x + win_w(a), y = wins[a].y + win_h(a);
-    return inside(px, py, x - GRIP, y - GRIP, GRIP, GRIP);
+    return inside(px, py, x - GRIP_IN, y - GRIP_IN, GRIP_IN + GRIP_OUT, GRIP_IN + GRIP_OUT);
 }
 
 static void draw_window(int a, bool focused) {
@@ -238,13 +240,13 @@ static void draw_window(int a, bool focused) {
     gfx_fill(clx, cly, wins[a].w, wins[a].h, apps[a].bg);
     apps[a].draw(clx, cly, wins[a].w, wins[a].h, focused);
     gfx_reset_clip();
-    if (apps[a].resizable && !wins[a].maximised) {          /* resize grip: three diagonal ridges */
+    if (apps[a].resizable && !wins[a].maximised) {          /* resize grip: a corner tab with diagonal ridges */
         int gx = x + w - 1, gy = y + h - 1;
-        gfx_fill(gx - GRIP + 2, gy - GRIP + 2, GRIP - 2, GRIP - 2, RGB(0xD8, 0xEE, 0xDD));
+        gfx_fill(gx - GRIP + 1, gy - GRIP + 1, GRIP, GRIP, focused ? C_TITLE_A : RGB(0x9A, 0xB4, 0xA0));
+        gfx_rect(gx - GRIP + 1, gy - GRIP + 1, GRIP, GRIP, C_FRAME);
         for (int i = 0; i < 3; i++) {
-            int o = 4 + i * 5;
-            gfx_line(gx - o, gy - 2, gx - 2, gy - o, 1, C_FRAME);
-            gfx_line(gx - o + 1, gy - 2, gx - 2, gy - o + 1, 1, RGB(0x6C, 0xC8, 0x84));
+            int o = 6 + i * 5;
+            gfx_line(gx - o, gy - 3, gx - 3, gy - o, 1, 0xFFFFFF);
         }
     }
 }
@@ -390,6 +392,12 @@ static void mouse_down(void) {
     for (int i = zcount - 1; i >= 0; i--) {         /* windows, top first */
         int a = zorder[i];
         if (wins[a].minimised) continue;
+        if (in_grip(a, mx, my) && !(my >= wins[a].y && my < wins[a].y + TITLE_H)) {
+            raise(a);                               /* corner grip, checked first so its zone can */
+            size_app = a;                           /* reach a little outside the window */
+            size_dx = wins[a].x + win_w(a) - mx; size_dy = wins[a].y + win_h(a) - my;
+            return;
+        }
         if (!inside(mx, my, wins[a].x, wins[a].y, win_w(a), win_h(a))) continue;
         raise(a);                                   /* any click focuses + raises the window */
         for (int b = 0; b < 3; b++) {
@@ -398,11 +406,6 @@ static void mouse_down(void) {
                 pressed_app = a; pressed_btn = b;   /* acts on release, like a real button */
                 return;
             }
-        }
-        if (in_grip(a, mx, my)) {
-            size_app = a;
-            size_dx = wins[a].x + win_w(a) - mx; size_dy = wins[a].y + win_h(a) - my;
-            return;
         }
         if (my < wins[a].y + TITLE_H) {
             if (wins[a].maximised) return;          /* maximised windows stay put */
