@@ -1,12 +1,39 @@
-# LeoOS 0.2
+# LeoOS 0.3
 
 LeoOS is a small hobby operating system for 32-bit x86 PCs, written from scratch in C
-with a little NASM assembly. Version 0.2 boots into a **green desktop**. It has windows you can drag,
-a mouse, a taskbar with a Start menu, and five apps. The 0.1 text-mode shell is still in the GRUB menu.
+with a little NASM assembly. It boots into a **green desktop**. It has windows you can drag, minimise and resize,
+a mouse, a taskbar with a Start menu, and seven apps, including two games. The 0.1 text-mode shell is still in the GRUB menu.
 
-![LeoOS 0.2 desktop](screenshots/10-desktop.png)
+![LeoOS 0.3 desktop](screenshots/20-desktop-0.3.png)
 
-## What's new in 0.2: the desktop
+## What's new in 0.3
+
+- **Focus fix:** typing always goes to the window you clicked last. Keyboard and mouse events are now handled in the
+  exact order they arrived (each one gets a sequence number in its interrupt handler), so a click followed
+  quickly by typing can't send the keys to the old window any more. Clicking anywhere in a window focuses and raises it
+- **Minimise:** every window has a minimise button. Minimised windows hide and show as a dark button on the taskbar;
+  click it to bring the window back. Clicking the taskbar button of the window you're using minimises it
+- **Resize:** drag the grip in the bottom-right corner of Terminal, Paint or Notepad. Paint and Notepad also have a
+  maximise button. Notepad re-wraps its text, Paint's canvas grows (up to full screen), and a smaller Terminal shows the
+  part around the cursor. Calculator, Snake, Minesweeper and About keep a fixed size
+- **Files:** a small RAM filesystem (16 files, up to 4000 bytes each). Notepad has **New**, **Open** and **Save** buttons,
+  and the Terminal has `ls`, `cat`, `rm` and `write`. There's no disk driver yet, so **files are lost when you restart**
+- **Snake:** arrow keys or WASD, or tap the big on-screen arrows (or tap the board on the side you want to turn to),
+  so it plays on a phone. The PIT timer moves the snake, and it speeds up as you eat. It keeps your score and best score,
+  and has a game-over screen with New game. It pauses when another window is focused
+- **Minesweeper** (written by Luna, integrated by Nova): 9x9 with 10 mines, and your first click is never a mine.
+  Empty areas open up automatically and the numbers are coloured. It has a mine counter, a smiley **New** button,
+  and win and lose banners. Place flags with the **Flag** button (works with taps), the F key or right-click
+
+| | |
+|---|---|
+| ![focus fix](screenshots/21-focus-fix.png) | ![minimised](screenshots/22-minimised.png) |
+| ![notepad save](screenshots/24-notepad-save-dialog.png) | ![ls cat rm](screenshots/25-terminal-ls-cat-rm.png) |
+| ![snake](screenshots/26b-snake-playing.png) | ![minesweeper](screenshots/27-minesweeper.png) |
+
+`tools/qemu_test.py` drives a headless QEMU through its monitor (clicks, drags, typing and screenshots); it made the screenshots above.
+
+## The desktop (since 0.2)
 
 - **Graphics:** the Multiboot header asks GRUB for a 1024x768, 32-bit linear framebuffer. Everything is drawn
   into a back buffer and copied to the screen in one go (double buffering, so nothing flickers). The wallpaper is
@@ -26,8 +53,8 @@ a mouse, a taskbar with a Start menu, and five apps. The 0.1 text-mode shell is 
   - **Calculator**: clickable buttons, or type on the keyboard. Handles `+ - * / %`, +/-, backspace and C
   - **Paint**: 12 colours, 3 brush sizes and Clear. Drag to draw
   - **Notepad**: type text with word-wrap and backspace
-  - **About LeoOS**: version 0.2, screen size and memory
-- **Boot menu:** GRUB waits 3 seconds. Pick *LeoOS 0.2 (classic text-mode shell)* to get the original text-mode OS
+  - **About LeoOS**: version, screen size and memory
+- **Boot menu:** GRUB waits 3 seconds. Pick *LeoOS 0.3 (classic text-mode shell)* to get the original text-mode OS
 
 | | |
 |---|---|
@@ -55,6 +82,10 @@ a mouse, a taskbar with a Start menu, and five apps. The 0.1 text-mode shell is 
 | `mem` | memory sizes and the BIOS memory map that GRUB passes in |
 | `calc <expr>` | integer calculator with `+ - * / %` and brackets, e.g. `calc (6 + 1) * 6` |
 | `kbd [uk\|us]` | show or switch the keyboard layout |
+| `ls` | list files (kept in RAM, lost on restart) |
+| `cat <file>` | show a file, e.g. `cat readme.txt` |
+| `rm <file>` | delete a file |
+| `write <file> <text>` | save a line of text to a file, e.g. `write todo.txt feed the snake` |
 | `history` | list recent commands |
 | `reboot` | restart the machine |
 | `shutdown` | power off (works in QEMU, Bochs and VirtualBox) |
@@ -139,9 +170,13 @@ leo-os/
 │   ├── font8x16.c           8x16 bitmap font (generated from Spleen)
 │   ├── mouse.c              PS/2 mouse on IRQ12
 │   ├── gui.c                desktop, window manager, taskbar, Start menu, event loop
-│   ├── apps.c               Terminal, Calculator, Paint, Notepad, About
+│   ├── apps.c               Terminal, Calculator, Paint, Notepad (New/Open/Save), About
+│   ├── snake.c              Snake game (0.3)
+│   ├── minesweeper.c        Minesweeper game by Luna (0.3)
+│   ├── ramfs.c              RAM filesystem used by Notepad and ls/cat/rm/write (0.3)
 │   └── string.c             tiny freestanding libc pieces (strlen, memcpy, itoa…)
 ├── tools/qemu_drive.py      drives a headless QEMU over its monitor (sendkey and screendump)
+├── tools/qemu_test.py       the same, plus mouse clicks, right-clicks and drags (0.3)
 └── screenshots/             screenshots taken from a real boot in QEMU
 ```
 
@@ -157,16 +192,19 @@ leo-os/
 GRUB checks the video fields in the Multiboot header and sets up a 1024x768x32 framebuffer.
 `kmain` finds it through the Multiboot info and points the text console at an 80x25 buffer in RAM, which the
 Terminal window draws. It then starts the mouse and runs `gui_run`, a loop that:
-1. reads keys and mouse packets
-2. updates the windows
+1. reads keys and mouse packets in the order they arrived
+2. updates the windows and lets apps that animate (Snake) step on the timer
 3. if anything changed (or the half-second clock tick came round), redraws the whole frame into the back buffer and copies it to the screen
 
 The text-mode menu entry boots `leo-os-text.bin`. That is the same code, built with a header that doesn't ask for graphics.
 
 ## Limitations
 
-- Each app has one window. You can't resize, minimise or maximise windows
-- Calculator works in whole numbers only. Notepad can only add or delete text at the end and can't save (there is no filesystem yet)
+- Each app has one window
+- Files live only in RAM (no disk driver yet), so they are lost on restart. There are no folders, and there's a maximum of 16 files of up to 4000 bytes each
+- Calculator works in whole numbers only. Notepad can only add or delete text at the end (there's no cursor movement yet)
+- A Terminal window that's smaller than 80x25 shows the part around the cursor instead of re-wrapping lines
+- Snake and Minesweeper don't keep high scores after a restart
 - The desktop needs a 32-bit colour VBE mode (QEMU, VirtualBox and Bochs have one). If GRUB can't provide it, LeoOS falls back to text mode
 - No paging, heap, filesystem, user mode or multitasking yet
 

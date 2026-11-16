@@ -38,13 +38,15 @@ static const char us_shift[128] = {
 
 #define BUF_SIZE 128
 static volatile int buf[BUF_SIZE];
+static volatile uint32_t seqs[BUF_SIZE];
 static volatile uint32_t head, tail;
+volatile uint32_t input_seq;                    /* shared with the mouse: global event order */
 static bool shift, caps, ctrl, extended;
 static int uk = 1;
 
 static void push(int c) {
     uint32_t next = (head + 1) % BUF_SIZE;
-    if (next != tail) { buf[head] = c; head = next; }
+    if (next != tail) { buf[head] = c; seqs[head] = ++input_seq; head = next; }
 }
 
 static void keyboard_handler(struct regs *r) {
@@ -103,6 +105,8 @@ int keyboard_poll(void) {
     tail = (tail + 1) % BUF_SIZE;
     return c;
 }
+
+uint32_t keyboard_next_seq(void) { return head == tail ? 0xFFFFFFFFu : seqs[tail]; }
 
 void keyboard_set_layout(int is_uk) { uk = is_uk; }
 int  keyboard_is_uk(void) { return uk; }

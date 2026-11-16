@@ -5,6 +5,7 @@
 #include "io.h"
 #include "string.h"
 #include "version.h"
+#include "ramfs.h"
 
 #define LINE_MAX  128
 #define HIST_MAX  16
@@ -160,7 +161,8 @@ static void cmd_about(int argc, char **argv) {
              "  * Boots via GRUB (Multiboot), flat GDT, IDT + remapped 8259 PIC\n"
              "  * PIT timer (100 Hz), PS/2 keyboard (UK/US), VGA text console\n"
              "  * This shell, with history (up/down arrows), Ctrl+L and Ctrl+C\n"
-             "  * 0.2: a green desktop GUI with windows, mouse and apps\n");
+             "  * 0.2: a green desktop GUI with windows, mouse and apps\n"
+             "  * 0.3: minimise/resize, Snake, Minesweeper, files (ls, cat, rm)\n");
 }
 
 static void cmd_colour(int argc, char **argv) {
@@ -267,6 +269,54 @@ static void cmd_history(int argc, char **argv) {
     for (int i = start; i < hist_count; i++) kprintf("  %d  %s\n", i + 1, history[i % HIST_MAX]);
 }
 
+
+/* ------------------------------------------------- files (RAM filesystem) */
+static void cmd_ls(int argc, char **argv) {
+    (void)argc; (void)argv;
+    if (!fs_files()) { vga_puts("no files yet - save one from Notepad\n"); return; }
+    uint8_t f = vga_get_fg(), b = vga_get_bg();
+    for (int i = 0; i < fs_count(); i++) {
+        if (!fs_used(i)) continue;
+        vga_set_colour(LIGHT_CYAN, b); vga_puts("  "); vga_puts(fs_name(i));
+        vga_set_colour(f, b);
+        for (size_t n = strlen(fs_name(i)); n < 26; n++) vga_putc(' ');
+        kprintf("%u bytes\n", (uint32_t)fs_size(i));
+    }
+    kprintf("%u file(s). Files live in RAM and are lost on restart.\n", (uint32_t)fs_files());
+}
+
+static void cmd_cat(int argc, char **argv) {
+    if (argc < 2) { vga_puts("usage: cat <file>   (type 'ls' to list files)\n"); return; }
+    static char buf[FS_DATA_MAX];
+    int n = fs_read(argv[1], buf, FS_DATA_MAX);
+    if (n < 0) { kprintf("cat: %s: no such file\n", argv[1]); return; }
+    for (int i = 0; i < n; i++) vga_putc(buf[i]);
+    if (n && buf[n - 1] != '\n') vga_putc('\n');
+}
+
+static void cmd_rm(int argc, char **argv) {
+    if (argc < 2) { vga_puts("usage: rm <file>\n"); return; }
+    for (int i = 1; i < argc; i++) {
+        if (fs_remove(argv[i]) < 0) kprintf("rm: %s: no such file\n", argv[i]);
+        else kprintf("removed %s\n", argv[i]);
+    }
+}
+
+static void cmd_write(int argc, char **argv) {
+    if (argc < 2) { vga_puts("usage: write <file> <text>\n"); return; }
+    char buf[LINE_MAX]; buf[0] = 0;
+    for (int i = 2; i < argc; i++) {
+        if (strlen(buf) + strlen(argv[i]) + 3 >= LINE_MAX) break;
+        if (i > 2) strcpy(buf + strlen(buf), " ");
+        strcpy(buf + strlen(buf), argv[i]);
+    }
+    strcpy(buf + strlen(buf), "\n");
+    int r = fs_write(argv[1], buf, (int)strlen(buf));
+    if (r == -2) vga_puts("write: bad file name (use letters, digits, . _ -)\n");
+    else if (r == -1) vga_puts("write: the file system is full - rm something first\n");
+    else kprintf("saved %s\n", argv[1]);
+}
+
 void shell_command_reboot(void)   { cmd_reboot(0, NULL); }
 void shell_command_shutdown(void) { cmd_shutdown(0, NULL); }
 
@@ -282,6 +332,10 @@ static const struct command commands[] = {
     { "mem",      cmd_mem,      "show the memory map from the bootloader" },
     { "calc",     cmd_calc,     "integer calculator: calc (2 + 3) * 7" },
     { "kbd",      cmd_kbd,      "show/switch keyboard layout: kbd uk | kbd us" },
+    { "ls",       cmd_ls,       "list files (kept in RAM, lost on restart)" },
+    { "cat",      cmd_cat,      "show a file: cat readme.txt" },
+    { "rm",       cmd_rm,       "delete a file: rm notes.txt" },
+    { "write",    cmd_write,    "save text to a file: write todo.txt feed cat" },
     { "history",  cmd_history,  "list recent commands (up/down to recall)" },
     { "reboot",   cmd_reboot,   "restart the machine" },
     { "shutdown", cmd_shutdown, "power off (in QEMU)" },

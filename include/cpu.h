@@ -22,6 +22,8 @@ void keyboard_set_layout(int uk);
 int  keyboard_is_uk(void);
 void mouse_init(void);
 bool mouse_poll(int *dx, int *dy, int *buttons);   /* one movement packet */
+uint32_t keyboard_next_seq(void);   /* arrival order of the next queued key, ~0 if none */
+uint32_t mouse_next_seq(void);      /* arrival order of the next mouse packet, ~0 if none */
 void serial_init(void);
 void serial_putc(char c);
 #define KEY_UP    0x100

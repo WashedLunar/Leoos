@@ -1,4 +1,5 @@
-/* LeoOS - desktop apps: Terminal, Calculator, Paint, Notepad and About */
+/* LeoOS - desktop apps: Terminal, Calculator, Paint, Notepad and About
+ * (Snake and Minesweeper live in snake.c and minesweeper.c) */
 #include "gui.h"
 #include "gfx.h"
 #include "cpu.h"
@@ -6,6 +7,9 @@
 #include "shell.h"
 #include "string.h"
 #include "version.h"
+#include "ramfs.h"
+#include "snake.h"
+#include "minesweeper.h"
 
 static const uint32_t vga_palette[16] = {
     0x000000, 0x0000AA, 0x00AA00, 0x00AAAA, 0xAA0000, 0xAA00AA, 0xAA5500, 0xAAAAAA,
@@ -23,17 +27,23 @@ static void center_text(int x, int w, int y, const char *s, uint32_t c, int scal
 static uint16_t term_cells[VGA_WIDTH * VGA_HEIGHT];
 
 static void term_draw(int x, int y, int w, int h, bool focused) {
-    (void)w; (void)h;
-    for (int r = 0; r < VGA_HEIGHT; r++)
-        for (int c = 0; c < VGA_WIDTH; c++) {
-            uint16_t cell = term_cells[r * VGA_WIDTH + c];
+    /* The console is always 80x25. A smaller window shows the part around the cursor. */
+    int rows = (h - 8) / FONT_H, cols = (w - 8) / FONT_W;
+    if (rows > VGA_HEIGHT) rows = VGA_HEIGHT;
+    if (cols > VGA_WIDTH) cols = VGA_WIDTH;
+    if (rows < 1) rows = 1;
+    if (cols < 1) cols = 1;
+    int cr, cc; vga_get_cursor(&cr, &cc);
+    int r0 = cr >= rows ? cr - rows + 1 : 0, c0 = cc >= cols ? cc - cols + 1 : 0;
+    for (int r = 0; r < rows; r++)
+        for (int c = 0; c < cols; c++) {
+            uint16_t cell = term_cells[(r0 + r) * VGA_WIDTH + c0 + c];
             uint8_t ch = cell & 0xFF, attr = cell >> 8;
             uint32_t bg = vga_palette[(attr >> 4) & 0xF];
             if (bg != 0) gfx_fill(x + 4 + c * FONT_W, y + 4 + r * FONT_H, FONT_W, FONT_H, bg);
             if (ch != ' ' && ch) gfx_char(x + 4 + c * FONT_W, y + 4 + r * FONT_H, ch, vga_palette[attr & 0xF], TRANSPARENT, 1);
         }
-    int cr, cc; vga_get_cursor(&cr, &cc);
-    if (focused && blink_on()) gfx_fill(x + 4 + cc * FONT_W, y + 4 + cr * FONT_H + 13, FONT_W, 2, 0xC0C0C0);
+    if (focused && blink_on()) gfx_fill(x + 4 + (cc - c0) * FONT_W, y + 4 + (cr - r0) * FONT_H + 13, FONT_W, 2, 0xC0C0C0);
 }
 
 static void term_key(int c) { shell_key(c); }
@@ -168,10 +178,12 @@ static void calc_icon(int x, int y) {
 }
 
 /* =================================================================== Paint */
-#define PAINT_W 520
+#define PAINT_W 520             /* default canvas size */
 #define PAINT_H 340
+#define PAINT_MAXW 1024         /* the canvas buffer is big enough for a maximised window */
+#define PAINT_MAXH 720
 #define PAINT_TOOLBAR 36
-static uint32_t canvas[PAINT_W * PAINT_H];
+static uint32_t canvas[PAINT_MAXW * PAINT_MAXH];
 static const uint32_t paint_colours[12] = {
     0x000000, 0xFFFFFF, 0x808080, 0xD9453B, 0xF08A24, 0xF5D02A,
     0x2FA84F, 0x0B6B26, 0x2E86DE, 0x1B3B8C, 0x9B59B6, 0x8B5A2B,
@@ -179,13 +191,14 @@ static const uint32_t paint_colours[12] = {
 static uint32_t paint_colour = 0x2FA84F;
 static int paint_size = 4, paint_lx = -1, paint_ly = -1;
 static const int paint_sizes[3] = { 2, 5, 10 };
+static int paint_vw = PAINT_W, paint_vh = PAINT_H;     /* visible part of the canvas */
 
 static void canvas_dot(int cx, int cy, int r) {
     for (int dy = -r; dy <= r; dy++)
         for (int dx = -r; dx <= r; dx++) {
             int x = cx + dx, y = cy + dy;
-            if (dx * dx + dy * dy <= r * r + r && x >= 0 && y >= 0 && x < PAINT_W && y < PAINT_H)
-                canvas[y * PAINT_W + x] = paint_colour;
+            if (dx * dx + dy * dy <= r * r + r && x >= 0 && y >= 0 && x < paint_vw && y < paint_vh)
+                canvas[y * PAINT_MAXW + x] = paint_colour;
         }
 }
 
@@ -202,10 +215,10 @@ static void canvas_line(int x0, int y0, int x1, int y1) {
     }
 }
 
-static void paint_clear(void) { for (int i = 0; i < PAINT_W * PAINT_H; i++) canvas[i] = 0xFFFFFF; }
+static void paint_clear(void) { for (int i = 0; i < PAINT_MAXW * PAINT_MAXH; i++) canvas[i] = 0xFFFFFF; }
 
 static void paint_draw(int x, int y, int w, int h, bool focused) {
-    (void)h; (void)focused;
+    (void)focused;
     gfx_fill(x, y, w, PAINT_TOOLBAR, RGB(0xE4, 0xF2, 0xE7));
     for (int i = 0; i < 12; i++) {
         int sx = x + 8 + i * 24;
@@ -220,7 +233,9 @@ static void paint_draw(int x, int y, int w, int h, bool focused) {
     }
     gfx_bevel(x + 410, y + 7, 64, 22, RGB(0xE0, 0x6A, 0x5A), false);
     gfx_text(x + 422, y + 10, "Clear", 0xFFFFFF, TRANSPARENT, 1);
-    gfx_blit(x, y + PAINT_TOOLBAR, PAINT_W, PAINT_H, canvas, PAINT_W);
+    int cw = w < PAINT_MAXW ? w : PAINT_MAXW, ch = h - PAINT_TOOLBAR < PAINT_MAXH ? h - PAINT_TOOLBAR : PAINT_MAXH;
+    paint_vw = cw; paint_vh = ch;
+    gfx_blit(x, y + PAINT_TOOLBAR, cw, ch, canvas, PAINT_MAXW);
 }
 
 static void paint_click(int lx, int ly) {
@@ -255,12 +270,39 @@ static void paint_icon(int x, int y) {
 }
 
 /* ================================================================= Notepad */
-#define NOTE_MAX 4000
+#define NOTE_MAX FS_DATA_MAX
+#define NOTE_BAR 34                       /* toolbar: New, Open, Save + file name */
 static char note[NOTE_MAX + 1];
 static int note_len;
+static char note_name[FS_NAME_MAX];       /* "" = untitled */
+static bool note_dirty;
+enum { NOTE_EDIT, NOTE_SAVE, NOTE_OPEN };
+static int note_mode, note_pressed = -1;
+static char note_input[FS_NAME_MAX];      /* file name being typed in the Save box */
+static bool note_input_fresh;             /* suggested name is "selected": typing replaces it */
+static const char *note_msg;              /* short status message, e.g. "Saved!" */
+static uint32_t note_msg_until;
+static int note_open_files[FS_MAX_FILES], note_open_count;
 
-static void note_draw(int x, int y, int w, int h, bool focused) {
+static const char *note_btn_label[3] = { "New", "Open", "Save" };
+static void note_btn_rect(int i, int *x, int *y, int *w, int *h) { *x = 6 + i * 62; *y = 5; *w = 56; *h = 24; }
+
+static void note_status(const char *m) { note_msg = m; note_msg_until = timer_ticks() + 3 * timer_hz(); }
+
+/* dialog box inside the client area */
+static void note_dialog_rect(int w, int h, int *dx, int *dy, int *dw, int *dh, int rows) {
+    *dw = w - 40 < 340 ? w - 40 : 340;
+    *dh = rows ? 70 + rows * 30 : 120;
+    if (*dh > h - NOTE_BAR - 10) *dh = h - NOTE_BAR - 10;
+    *dx = (w - *dw) / 2; *dy = NOTE_BAR + (h - NOTE_BAR - *dh) / 2;
+}
+/* OK / Cancel buttons at the bottom of the dialog */
+static void note_dlg_btn(int i, int dx, int dy, int dw, int dh, int *bx, int *by) { *bx = dx + dw - (2 - i) * 88; *by = dy + dh - 36; }
+
+static void note_draw_text(int x, int y, int w, int h, bool focused) {
     int cols = (w - 16) / FONT_W, rows = (h - 12) / FONT_H;
+    if (cols < 1) cols = 1;
+    if (rows < 1) rows = 1;
     /* first pass: count wrapped lines so we can keep the end in view */
     int line = 0, col = 0;
     for (int i = 0; i < note_len; i++) {
@@ -277,14 +319,144 @@ static void note_draw(int x, int y, int w, int h, bool focused) {
         col++;
     }
     if (col == cols) { line++; col = 0; }
-    if (focused && blink_on()) gfx_fill(x + 8 + col * FONT_W, y + 6 + (line - first) * FONT_H, 2, FONT_H - 1, TEXT_DARK);
+    if (focused && note_mode == NOTE_EDIT && blink_on())
+        gfx_fill(x + 8 + col * FONT_W, y + 6 + (line - first) * FONT_H, 2, FONT_H - 1, TEXT_DARK);
 }
 
+static void note_draw(int x, int y, int w, int h, bool focused) {
+    /* toolbar */
+    gfx_fill(x, y, w, NOTE_BAR, RGB(0xE4, 0xF2, 0xE7));
+    gfx_fill(x, y + NOTE_BAR - 1, w, 1, RGB(0xA8, 0xC8, 0xB0));
+    for (int i = 0; i < 3; i++) {
+        int bx, by, bw, bh; note_btn_rect(i, &bx, &by, &bw, &bh);
+        gfx_bevel(x + bx, y + by, bw, bh, i == 2 ? RGB(0x3B, 0xB0, 0x5A) : 0xF2F2F2, note_pressed == i);
+        center_text(x + bx, bw, y + by + 4, note_btn_label[i], i == 2 ? 0xFFFFFF : TEXT_DARK, 1);
+    }
+    char title[FS_NAME_MAX + 4];
+    strcpy(title, note_name[0] ? note_name : "untitled");
+    if (note_dirty) strcpy(title + strlen(title), " *");
+    gfx_text(x + 196, y + 9, title, TEXT_DARK, TRANSPARENT, 1);
+    if (note_msg && timer_ticks() < note_msg_until) {
+        int tw = (int)strlen(note_msg) * FONT_W;
+        gfx_text(x + w - tw - 10, y + 9, note_msg, RGB(0x1C, 0x75, 0x36), TRANSPARENT, 1);
+    }
+    gfx_set_clip(x, y + NOTE_BAR, w, h - NOTE_BAR);
+    note_draw_text(x, y + NOTE_BAR, w, h - NOTE_BAR, focused);
+    if (note_mode == NOTE_EDIT) return;
+
+    /* dialogs */
+    gfx_shade(x, y + NOTE_BAR, w, h - NOTE_BAR, 60);
+    int dx, dy, dw, dh;
+    note_dialog_rect(w, h, &dx, &dy, &dw, &dh, note_mode == NOTE_OPEN ? (note_open_count ? note_open_count : 1) : 0);
+    gfx_set_clip(x + dx, y + dy, dw, dh);
+    gfx_shade(x + dx + 4, y + dy + 4, dw, dh, 80);
+    gfx_fill(x + dx, y + dy, dw, dh, RGB(0xF4, 0xFA, 0xF5));
+    gfx_rect(x + dx, y + dy, dw, dh, RGB(0x0E, 0x4D, 0x22));
+    gfx_gradient(x + dx + 1, y + dy + 1, dw - 2, 24, RGB(0x2F, 0xA8, 0x4F), RGB(0x17, 0x6E, 0x32));
+    gfx_text(x + dx + 10, y + dy + 5, note_mode == NOTE_SAVE ? "Save as" : "Open a file", 0xFFFFFF, TRANSPARENT, 1);
+    if (note_mode == NOTE_SAVE) {
+        gfx_text(x + dx + 12, y + dy + 34, "File name:", TEXT_DARK, TRANSPARENT, 1);
+        gfx_fill(x + dx + 100, y + dy + 30, dw - 112, 24, 0xFFFFFF);
+        gfx_rect(x + dx + 100, y + dy + 30, dw - 112, 24, RGB(0x6C, 0x9C, 0x78));
+        if (note_input_fresh) {
+            gfx_fill(x + dx + 105, y + dy + 33, (int)strlen(note_input) * FONT_W + 2, FONT_H + 2, RGB(0x2F, 0xA8, 0x4F));
+            gfx_text(x + dx + 106, y + dy + 34, note_input, 0xFFFFFF, TRANSPARENT, 1);
+        } else gfx_text(x + dx + 106, y + dy + 34, note_input, TEXT_DARK, TRANSPARENT, 1);
+        if (blink_on()) gfx_fill(x + dx + 106 + (int)strlen(note_input) * FONT_W, y + dy + 34, 2, FONT_H, TEXT_DARK);
+        gfx_text(x + dx + 12, y + dy + 62, "Kept in RAM - lost on restart", RGB(0x60, 0x80, 0x68), TRANSPARENT, 1);
+    } else if (!note_open_count) {
+        gfx_text(x + dx + 12, y + dy + 36, "No saved files yet.", TEXT_DARK, TRANSPARENT, 1);
+    } else {
+        for (int i = 0; i < note_open_count; i++) {
+            int f = note_open_files[i], ry = dy + 32 + i * 30;
+            gfx_bevel(x + dx + 10, y + ry, dw - 20, 26, RGB(0xE4, 0xF2, 0xE7), false);
+            gfx_text(x + dx + 18, y + ry + 5, fs_name(f), TEXT_DARK, TRANSPARENT, 1);
+            char num[16]; utoa((uint32_t)fs_size(f), num, 10); strcpy(num + strlen(num), " B");
+            gfx_text(x + dx + dw - 20 - (int)strlen(num) * FONT_W - 8, y + ry + 5, num, RGB(0x60, 0x80, 0x68), TRANSPARENT, 1);
+        }
+    }
+    for (int i = note_mode == NOTE_SAVE ? 0 : 1; i < 2; i++) {
+        int bx, by; note_dlg_btn(i, dx, dy, dw, dh, &bx, &by);
+        gfx_bevel(x + bx, y + by, 80, 28, i == 0 ? RGB(0x3B, 0xB0, 0x5A) : 0xF2F2F2, note_pressed == 10 + i);
+        center_text(x + bx, 80, y + by + 6, i == 0 ? "Save" : "Cancel", i == 0 ? 0xFFFFFF : TEXT_DARK, 1);
+    }
+}
+
+static void note_do_save(void) {
+    if (!fs_valid_name(note_input)) { note_status("Bad name: use a-z 0-9 . _ -"); return; }
+    int r = fs_write(note_input, note, note_len);
+    if (r == -1) { note_status("Disk full - rm a file"); return; }
+    strcpy(note_name, note_input);
+    note_dirty = false; note_mode = NOTE_EDIT;
+    note_status("Saved!");
+}
+
+static void note_open_list(void) {
+    note_open_count = 0;
+    for (int i = 0; i < fs_count(); i++) if (fs_used(i)) note_open_files[note_open_count++] = i;
+    note_mode = NOTE_OPEN;
+}
+
+static void note_click(int lx, int ly) {
+    int w, h; gui_client_size(APP_NOTEPAD, &w, &h);
+    if (note_mode == NOTE_EDIT) {
+        for (int i = 0; i < 3; i++) {
+            int bx, by, bw, bh; note_btn_rect(i, &bx, &by, &bw, &bh);
+            if (lx < bx || ly < by || lx >= bx + bw || ly >= by + bh) continue;
+            note_pressed = i;
+            if (i == 0) { note_len = 0; note_name[0] = 0; note_dirty = false; note_status("New note"); }
+            else if (i == 1) note_open_list();
+            else { strcpy(note_input, note_name[0] ? note_name : "notes.txt"); note_input_fresh = true; note_mode = NOTE_SAVE; }
+        }
+        return;
+    }
+    int dx, dy, dw, dh;
+    note_dialog_rect(w, h, &dx, &dy, &dw, &dh, note_mode == NOTE_OPEN ? (note_open_count ? note_open_count : 1) : 0);
+    for (int i = 0; i < 2; i++) {
+        int bx, by; note_dlg_btn(i, dx, dy, dw, dh, &bx, &by);
+        if (lx >= bx && ly >= by && lx < bx + 80 && ly < by + 28) {
+            if (i == 0 && note_mode != NOTE_SAVE) continue;
+            note_pressed = 10 + i;
+            if (i == 0) note_do_save(); else note_mode = NOTE_EDIT;
+            return;
+        }
+    }
+    if (note_mode == NOTE_OPEN) {
+        for (int i = 0; i < note_open_count; i++) {
+            int ry = dy + 32 + i * 30;
+            if (lx >= dx + 10 && lx < dx + dw - 10 && ly >= ry && ly < ry + 26) {
+                int f = note_open_files[i];
+                strcpy(note_name, fs_name(f));
+                note_len = fs_read(note_name, note, NOTE_MAX);
+                if (note_len < 0) note_len = 0;
+                note_dirty = false; note_mode = NOTE_EDIT;
+                note_status("Opened");
+                return;
+            }
+        }
+    }
+}
+static void note_release(void) { note_pressed = -1; }
+
 static void note_key(int c) {
-    if (c == '\b') { if (note_len) note_len--; return; }
+    if (note_mode == NOTE_SAVE) {
+        if (note_input_fresh && c != '\n' && c != 27 && c < 0x100) note_input[0] = 0;   /* typing replaces the suggestion */
+        if (c != '\n') note_input_fresh = false;
+        int n = (int)strlen(note_input);
+        if (c == '\n') note_do_save();
+        else if (c == 27) note_mode = NOTE_EDIT;
+        else if (c == '\b') { if (n) note_input[n - 1] = 0; }
+        else if (n < FS_NAME_MAX - 1 && c < 0x100 &&
+                 ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-')) {
+            note_input[n] = (char)c; note_input[n + 1] = 0;
+        }
+        return;
+    }
+    if (note_mode == NOTE_OPEN) { if (c == 27) note_mode = NOTE_EDIT; return; }
+    if (c == '\b') { if (note_len) { note_len--; note_dirty = true; } return; }
     if (c == '\t') { for (int i = 0; i < 4; i++) note_key(' '); return; }
     if (c == '\n' || (c >= 32 && c < 256 && c != 127)) {
-        if (note_len < NOTE_MAX) note[note_len++] = (char)c;
+        if (note_len < NOTE_MAX) { note[note_len++] = (char)c; note_dirty = true; }
     }
 }
 
@@ -305,6 +477,9 @@ static void about_draw(int x, int y, int w, int h, bool focused) {
     center_text(x, w, y + 106, "Version " LEOOS_VERSION, TEXT_DARK, 2);
     center_text(x, w, y + 144, "A tiny 32-bit hobby operating system", TEXT_DARK, 1);
     center_text(x, w, y + 162, "built from scratch for Leo.", TEXT_DARK, 1);
+    center_text(x, w, y + 232, "New in 0.3: Snake, Minesweeper, saving files,", RGB(0x1C, 0x75, 0x36), 1);
+    center_text(x, w, y + 250, "minimise and resize. Files are kept in RAM", RGB(0x1C, 0x75, 0x36), 1);
+    center_text(x, w, y + 268, "only, so they are lost when you restart.", RGB(0x1C, 0x75, 0x36), 1);
     strcpy(buf, "Screen: "); utoa((uint32_t)gfx_w, num, 10); strcpy(buf + strlen(buf), num);
     strcpy(buf + strlen(buf), " x "); utoa((uint32_t)gfx_h, num, 10); strcpy(buf + strlen(buf), num);
     strcpy(buf + strlen(buf), ", 32-bit colour");
@@ -334,20 +509,32 @@ static void about_icon(int x, int y) {
 /* ================================================================ registry */
 const struct app apps[NAPPS] = {
     [APP_TERMINAL] = { "Terminal", VGA_WIDTH * FONT_W + 8, VGA_HEIGHT * FONT_H + 8, 0x000000,
-                       term_draw, NULL, NULL, NULL, term_key, term_icon },
+                       term_draw, NULL, NULL, NULL, term_key, term_icon,
+                       .resizable = true, .min_w = 240, .min_h = 120,
+                       .max_w = VGA_WIDTH * FONT_W + 8, .max_h = VGA_HEIGHT * FONT_H + 8 },
     [APP_CALC]     = { "Calculator", 4 * CALC_BW + 3 * 6 + 20, 76 + 5 * (CALC_BH + 6) + 4, RGB(0xD4, 0xE6, 0xD8),
                        calc_draw, calc_click, NULL, calc_release, calc_key, calc_icon },
     [APP_PAINT]    = { "Paint", PAINT_W, PAINT_H + PAINT_TOOLBAR, 0xFFFFFF,
-                       paint_draw, paint_click, paint_drag, paint_release, NULL, paint_icon },
+                       paint_draw, paint_click, paint_drag, paint_release, NULL, paint_icon,
+                       .resizable = true, .min_w = 480, .min_h = PAINT_TOOLBAR + 120 },
     [APP_NOTEPAD]  = { "Notepad", 480, 300, 0xFFFFFF,
-                       note_draw, NULL, NULL, NULL, note_key, note_icon },
-    [APP_ABOUT]    = { "About LeoOS", 400, 280, 0xF7FBF8,
+                       note_draw, note_click, NULL, note_release, note_key, note_icon,
+                       .resizable = true, .min_w = 320, .min_h = 200 },
+    [APP_SNAKE]    = { "Snake", SNAKE_W, SNAKE_H, SNAKE_BG,
+                       snake_draw, snake_click, NULL, snake_release, snake_key, snake_icon,
+                       .tick = snake_tick },
+    [APP_MINES]    = { "Minesweeper", MINES_W, MINES_H, MINES_BG,
+                       mines_draw, mines_click, NULL, mines_release, mines_key, mines_icon,
+                       .rclick = mines_rclick },
+    [APP_ABOUT]    = { "About LeoOS", 400, 330, 0xF7FBF8,
                        about_draw, about_click, NULL, NULL, about_key, about_icon },
 };
 
 void apps_init(void) {
     paint_clear();
-    strcpy(note, "Dear Leo,\n\nThis is Notepad on LeoOS " LEOOS_VERSION ". Type anything you like!\n\n");
+    snake_init();
+    mines_init();
+    strcpy(note, "Dear Leo,\n\nThis is Notepad on LeoOS " LEOOS_VERSION ". Type anything you like,\nthen tap Save. Open the Terminal and type 'ls' to see it!\n\n");
     note_len = (int)strlen(note);
     vga_use_buffer(term_cells);
     vga_set_colour(LIGHT_GREEN, BLACK);

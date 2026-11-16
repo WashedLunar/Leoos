@@ -2,8 +2,9 @@
 #include "cpu.h"
 #include "io.h"
 
-#define PKT_BUF 64
-struct packet { int16_t dx, dy; uint8_t buttons; };
+#define PKT_BUF 256
+struct packet { int16_t dx, dy; uint8_t buttons; uint32_t seq; };
+extern volatile uint32_t input_seq;
 static volatile struct packet pkts[PKT_BUF];
 static volatile uint32_t head, tail;
 static uint8_t bytes[3];
@@ -37,6 +38,7 @@ static void mouse_handler(struct regs *r) {
     pkts[head].dx = (int16_t)dx;
     pkts[head].dy = (int16_t)-dy;              /* PS/2 y grows upwards; screen y grows down */
     pkts[head].buttons = bytes[0] & 0x07;
+    pkts[head].seq = ++input_seq;
     head = next;
 }
 
@@ -46,6 +48,8 @@ bool mouse_poll(int *dx, int *dy, int *buttons) {
     tail = (tail + 1) % PKT_BUF;
     return true;
 }
+
+uint32_t mouse_next_seq(void) { return head == tail ? 0xFFFFFFFFu : pkts[tail].seq; }
 
 void mouse_init(void) {
     ctrl_cmd(0xA8);                            /* enable the auxiliary (mouse) port */

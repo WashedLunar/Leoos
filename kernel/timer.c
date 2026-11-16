@@ -12,7 +12,7 @@ static void two_digits(char *p, uint32_t v) { p[0] = (char)('0' + (v / 10) % 10)
 static void refresh_status(void) {
     uint32_t s = ticks / hz;
     char bar[81];
-    strcpy(bar, " LeoOS 0.2                                       uptime 00:00:00    kbd: UK ");
+    strcpy(bar, " LeoOS 0.3                                       uptime 00:00:00    kbd: UK ");
     two_digits(bar + 56, (s / 3600) % 100);
     two_digits(bar + 59, (s / 60) % 60);
     two_digits(bar + 62, s % 60);

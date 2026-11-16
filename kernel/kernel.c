@@ -9,6 +9,7 @@
 #include "gfx.h"
 #include "gui.h"
 #include "string.h"
+#include "ramfs.h"
 
 static void ok(const char *what) {
     vga_set_colour(LIGHT_GREY, BLACK); vga_puts(" [");
@@ -62,6 +63,7 @@ static void start_cpu_and_drivers(bool gui) {
 
 void kmain(uint32_t magic, struct multiboot_info *mbi) {
     serial_init();
+    fs_init();                               /* RAM filesystem with readme.txt */
     bool mb_valid = (magic == MULTIBOOT_BOOTLOADER_MAGIC);
 
     /* Desktop mode: GRUB gave us a 32bpp linear framebuffer and we weren't asked for text. */
