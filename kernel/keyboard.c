@@ -49,6 +49,9 @@ static void push(int c) {
 
 static void keyboard_handler(struct regs *r) {
     (void)r;
+    uint8_t status = inb(0x64);
+    if (!(status & 0x01)) return;               /* nothing to read */
+    if (status & 0x20) return;                  /* bit 5: byte is from the mouse, IRQ12 takes it */
     uint8_t sc = inb(0x60);
     if (sc == 0xE0) { extended = true; return; }
     bool release = sc & 0x80;
@@ -89,6 +92,13 @@ static void keyboard_handler(struct regs *r) {
 
 int keyboard_getchar(void) {
     while (head == tail) cpu_hlt();             /* sleep until the next interrupt */
+    int c = buf[tail];
+    tail = (tail + 1) % BUF_SIZE;
+    return c;
+}
+
+int keyboard_poll(void) {
+    if (head == tail) return -1;
     int c = buf[tail];
     tail = (tail + 1) % BUF_SIZE;
     return c;

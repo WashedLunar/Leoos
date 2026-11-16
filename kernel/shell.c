@@ -4,6 +4,7 @@
 #include "cpu.h"
 #include "io.h"
 #include "string.h"
+#include "version.h"
 
 #define LINE_MAX  128
 #define HIST_MAX  16
@@ -40,28 +41,36 @@ static void prompt(void) {
 
 static void erase_line(int len) { while (len--) vga_putc('\b'); }
 
-static int read_line(char *line) {
-    int len = 0, hist_pos = hist_count;
-    for (;;) {
-        int c = keyboard_getchar();
-        if (c == '\n') { vga_putc('\n'); line[len] = 0; return len; }
-        if (c == '\b') { if (len) { len--; vga_putc('\b'); } continue; }
-        if (c == 0x03) { vga_puts("^C\n"); line[0] = 0; return 0; }
-        if (c == 0x0C) { vga_clear(); prompt(); line[len] = 0; vga_puts(line); continue; }
-        if (c == KEY_UP || c == KEY_DOWN) {
-            if (c == KEY_UP && hist_pos > 0 && hist_pos > hist_count - HIST_MAX) hist_pos--;
-            else if (c == KEY_DOWN && hist_pos < hist_count) hist_pos++;
-            else continue;
-            erase_line(len);
-            if (hist_pos < hist_count) strcpy(line, history[hist_pos % HIST_MAX]);
-            else line[0] = 0;
-            len = (int)strlen(line);
-            vga_puts(line);
-            continue;
-        }
-        if (c >= 0x100 || c == '\t' || c == 27) continue;
-        if (len < LINE_MAX - 1) { line[len++] = (char)c; vga_putc((char)c); }
+/* The line editor is event driven: shell_key() is fed one key at a time, either
+ * from a blocking loop (text mode) or from the GUI's Terminal window. */
+static char line[LINE_MAX];
+static int len, hist_pos;
+static void execute(char *cmdline);
+
+void shell_key(int c) {
+    if (c == '\n') {
+        vga_putc('\n'); line[len] = 0;
+        if (len) execute(line);
+        len = 0; hist_pos = hist_count;
+        prompt();
+        return;
     }
+    if (c == '\b') { if (len) { len--; vga_putc('\b'); } return; }
+    if (c == 0x03) { vga_puts("^C\n"); len = 0; hist_pos = hist_count; prompt(); return; }
+    if (c == 0x0C) { vga_clear(); prompt(); line[len] = 0; vga_puts(line); return; }
+    if (c == KEY_UP || c == KEY_DOWN) {
+        if (c == KEY_UP && hist_pos > 0 && hist_pos > hist_count - HIST_MAX) hist_pos--;
+        else if (c == KEY_DOWN && hist_pos < hist_count) hist_pos++;
+        else return;
+        erase_line(len);
+        if (hist_pos < hist_count) strcpy(line, history[hist_pos % HIST_MAX]);
+        else line[0] = 0;
+        len = (int)strlen(line);
+        vga_puts(line);
+        return;
+    }
+    if (c < 0 || c >= 0x100 || c == '\t' || c == 27) return;
+    if (len < LINE_MAX - 1) { line[len++] = (char)c; vga_putc((char)c); }
 }
 
 static int split(char *line, char **argv) {
@@ -144,13 +153,14 @@ static void cmd_uptime(int argc, char **argv) {
 static void cmd_about(int argc, char **argv) {
     (void)argc; (void)argv;
     uint8_t f = vga_get_fg(), b = vga_get_bg();
-    vga_set_colour(LIGHT_CYAN, b); vga_puts("LeoOS 0.1");
+    vga_set_colour(LIGHT_CYAN, b); vga_puts("LeoOS " LEOOS_VERSION);
     vga_set_colour(f, b);
     vga_puts(" - a tiny hobby operating system built from scratch for Leo.\n"
              "  * 32-bit x86 protected mode kernel in C with a NASM entry stub\n"
              "  * Boots via GRUB (Multiboot), flat GDT, IDT + remapped 8259 PIC\n"
              "  * PIT timer (100 Hz), PS/2 keyboard (UK/US), VGA text console\n"
-             "  * This shell, with history (up/down arrows), Ctrl+L and Ctrl+C\n");
+             "  * This shell, with history (up/down arrows), Ctrl+L and Ctrl+C\n"
+             "  * 0.2: a green desktop GUI with windows, mouse and apps\n");
 }
 
 static void cmd_colour(int argc, char **argv) {
@@ -257,6 +267,9 @@ static void cmd_history(int argc, char **argv) {
     for (int i = start; i < hist_count; i++) kprintf("  %d  %s\n", i + 1, history[i % HIST_MAX]);
 }
 
+void shell_command_reboot(void)   { cmd_reboot(0, NULL); }
+void shell_command_shutdown(void) { cmd_shutdown(0, NULL); }
+
 struct command { const char *name; void (*fn)(int, char **); const char *help; };
 static const struct command commands[] = {
     { "help",     cmd_help,     "show this list" },
@@ -289,20 +302,25 @@ static void cmd_help(int argc, char **argv) {
     }
 }
 
-void shell_run(struct multiboot_info *mbi, bool mb_valid) {
-    mb = mbi; mb_ok = mb_valid;
-    char line[LINE_MAX];
+static void execute(char *cmdline) {
     char *argv[MAX_ARGS];
-    for (;;) {
-        prompt();
-        if (read_line(line) == 0) continue;
-        if (hist_count == 0 || strcmp(history[(hist_count - 1) % HIST_MAX], line))
-            strcpy(history[hist_count++ % HIST_MAX], line);
-        int argc = split(line, argv);
-        if (!argc) continue;
-        size_t i;
-        for (i = 0; i < NCOMMANDS; i++)
-            if (!strcmp(argv[0], commands[i].name)) { commands[i].fn(argc, argv); break; }
-        if (i == NCOMMANDS) kprintf("%s: command not found (try 'help')\n", argv[0]);
-    }
+    if (hist_count == 0 || strcmp(history[(hist_count - 1) % HIST_MAX], cmdline))
+        strcpy(history[hist_count++ % HIST_MAX], cmdline);
+    int argc = split(cmdline, argv);
+    if (!argc) return;
+    size_t i;
+    for (i = 0; i < NCOMMANDS; i++)
+        if (!strcmp(argv[0], commands[i].name)) { commands[i].fn(argc, argv); break; }
+    if (i == NCOMMANDS) kprintf("%s: command not found (try 'help')\n", argv[0]);
+}
+
+void shell_init(struct multiboot_info *mbi, bool mb_valid) {
+    mb = mbi; mb_ok = mb_valid;
+    len = 0; hist_pos = hist_count;
+    prompt();
+}
+
+void shell_run(struct multiboot_info *mbi, bool mb_valid) {
+    shell_init(mbi, mb_valid);
+    for (;;) shell_key(keyboard_getchar());
 }

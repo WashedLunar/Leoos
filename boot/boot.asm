@@ -2,7 +2,11 @@
 ; Multiboot header, kernel entry point and low-level CPU helpers.
 
 MB_MAGIC    equ 0x1BADB002
-MB_FLAGS    equ (1 << 0) | (1 << 1)         ; page-align modules, give us memory info
+%ifdef TEXT_MODE
+MB_FLAGS    equ (1 << 0) | (1 << 1)         ; text-mode kernel: no video request
+%else
+MB_FLAGS    equ (1 << 0) | (1 << 1) | (1 << 2) ; page-align modules, memory info, video mode
+%endif
 MB_CHECKSUM equ -(MB_MAGIC + MB_FLAGS)
 
 section .multiboot
@@ -10,6 +14,13 @@ align 4
     dd MB_MAGIC
     dd MB_FLAGS
     dd MB_CHECKSUM
+%ifndef TEXT_MODE
+    dd 0, 0, 0, 0, 0                        ; address fields (unused: we are a normal ELF)
+    dd 0                                    ; mode_type 0 = linear graphics framebuffer
+    dd 1024                                 ; preferred width
+    dd 768                                  ; preferred height
+    dd 32                                   ; preferred bits per pixel
+%endif
 
 section .bss
 align 16

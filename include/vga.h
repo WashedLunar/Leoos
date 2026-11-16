@@ -18,5 +18,8 @@ void vga_put_dec(int32_t v);
 void vga_put_udec(uint32_t v);
 void vga_put_hex(uint32_t v);
 void vga_status(const char *text);   /* top status bar */
+void vga_use_buffer(uint16_t *buf);  /* redirect console to an 80x25 RAM buffer */
+void vga_get_cursor(int *row, int *col);
+bool vga_take_dirty(void);
 void kprintf(const char *fmt, ...);  /* %s %d %u %x %c %% */
 #endif

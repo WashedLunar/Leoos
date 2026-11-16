@@ -17,8 +17,11 @@ uint32_t timer_hz(void);
 void timer_sleep(uint32_t ms);
 void keyboard_init(void);
 int  keyboard_getchar(void);        /* blocks; returns ASCII or KEY_* */
+int  keyboard_poll(void);           /* non-blocking; -1 if no key */
 void keyboard_set_layout(int uk);
 int  keyboard_is_uk(void);
+void mouse_init(void);
+bool mouse_poll(int *dx, int *dy, int *buttons);   /* one movement packet */
 void serial_init(void);
 void serial_putc(char c);
 #define KEY_UP    0x100

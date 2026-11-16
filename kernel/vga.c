@@ -5,11 +5,15 @@
 #include "cpu.h"
 #include "string.h"
 
-#define VGA_MEM   ((volatile uint16_t *)0xB8000)
-#define TOP_ROW   1                      /* row 0 is reserved for the status bar */
+/* In text mode we write straight into VGA memory at 0xB8000. In the GUI the very
+ * same console code writes into a RAM buffer that the Terminal window draws. */
+static volatile uint16_t *VGA_MEM = (volatile uint16_t *)0xB8000;
+static int TOP_ROW = 1;                  /* row 0 is the status bar in text mode */
+static bool hw_cursor = true;
+static bool dirty = true;
 #define TAB_WIDTH 4
 
-static int row = TOP_ROW, col = 0;
+static int row = 1, col = 0;
 static uint8_t fg = LIGHT_GREY, bg = BLACK;
 
 static inline uint16_t cell(char c, uint8_t f, uint8_t b) {
@@ -17,12 +21,15 @@ static inline uint16_t cell(char c, uint8_t f, uint8_t b) {
 }
 
 static void update_cursor(void) {
+    dirty = true;
+    if (!hw_cursor) return;
     uint16_t pos = (uint16_t)(row * VGA_WIDTH + col);
     outb(0x3D4, 0x0F); outb(0x3D5, (uint8_t)(pos & 0xFF));
     outb(0x3D4, 0x0E); outb(0x3D5, (uint8_t)(pos >> 8));
 }
 
 static void enable_cursor(uint8_t start, uint8_t end) {
+    if (!hw_cursor) return;
     outb(0x3D4, 0x0A); outb(0x3D5, (inb(0x3D5) & 0xC0) | start);
     outb(0x3D4, 0x0B); outb(0x3D5, (inb(0x3D5) & 0xE0) | end);
 }
@@ -49,6 +56,13 @@ void vga_init(void) {
     vga_status("");
     vga_clear();
 }
+
+void vga_use_buffer(uint16_t *buf) {
+    VGA_MEM = buf; TOP_ROW = 0; hw_cursor = false;
+    vga_clear();
+}
+void vga_get_cursor(int *r, int *c) { *r = row; *c = col; }
+bool vga_take_dirty(void) { bool d = dirty; dirty = false; return d; }
 
 void vga_set_colour(uint8_t f, uint8_t b) { fg = f & 0x0F; bg = b & 0x0F; }
 uint8_t vga_get_fg(void) { return fg; }
@@ -82,6 +96,7 @@ void vga_put_hex(uint32_t v) { char b[16]; utoa(v, b, 16); vga_puts("0x"); vga_p
 /* The status bar lives on row 0 and is written directly, so it never
  * disturbs the cursor or the scrolling console beneath it. */
 void vga_status(const char *text) {
+    if (!hw_cursor) return;            /* no status row inside the GUI terminal */
     const uint8_t sf = BLACK, sb = LIGHT_CYAN;
     int x = 0;
     for (; text[x] && x < VGA_WIDTH; x++) VGA_MEM[x] = cell(text[x], sf, sb);
