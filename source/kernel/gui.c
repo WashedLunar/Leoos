@@ -1,5 +1,6 @@
 /* LeoOS - desktop, window manager, taskbar and Start menu */
 #include "gui.h"
+#include "shell2.h"
 #include "gfx.h"
 #include "cpu.h"
 #include "io.h"
@@ -49,7 +50,8 @@ static bool menu_open;
 static bool start_pressed;
 
 static const int default_pos[NAPPS][2] = {
-    { 150, 40 }, { 760, 60 }, { 280, 120 }, { 400, 170 }, { 330, 90 }, { 620, 140 }, { 590, 330 },
+    { 330, 40 }, { 760, 60 }, { 280, 120 }, { 400, 170 }, { 200, 50 },
+    { 160, 80 }, { 330, 90 }, { 620, 140 }, { 470, 80 }, { 40, 200 }, { 360, 40 }, { 590, 330 },
 };
 
 static int win_w(int a) { return wins[a].w + 2 * BORDER; }
@@ -146,7 +148,12 @@ static int sin_deg(int x) {
     return sign * 4000 * x * (180 - x) / (40500 - x * (180 - x));
 }
 
-static void icon_tile(int i, int *x, int *y) { *x = 18; *y = 18 + i * 86; }
+/* Two columns so 11 app icons stay above the taskbar. */
+static void icon_tile(int i, int *x, int *y) {
+    int rows = (NAPPS + 1) / 2;
+    *x = 18 + (i / rows) * 110;
+    *y = 18 + (i % rows) * 72;
+}
 
 static void draw_wallpaper(void) {
     gfx_gradient(0, 0, gfx_w, gfx_h, C_DESK_TOP, C_DESK_BOTTOM);
@@ -497,6 +504,7 @@ static void handle_mouse_packet(int dx, int dy, int b) {
 
 void gui_run(struct multiboot_info *mbi) {
     gui_mbi = mbi;
+    gui_active = true;
     draw_wallpaper();
     gfx_save_background();
     mx = gfx_w / 2; my = gfx_h / 2;

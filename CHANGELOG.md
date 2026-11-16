@@ -1,3 +1,32 @@
+# LeoOS 0.4 – Release notes
+
+LeoOS 0.4 adds folders, a Files app, a pages browser and three new games, plus a much bigger Terminal. It still boots straight to the green desktop and runs in your phone's browser. Files are still kept only in RAM, so they disappear when you restart.
+
+## Folders and Files (Nova)
+- The RAM filesystem now has folders, a current directory and paths such as `docs/welcome.txt` or `/docs/welcome.txt`. There are 32 slots (files and folders) of up to 4000 bytes each.
+- The new **Files** app works like a small File Explorer: a path bar and Up button, folder and file icons, double-click to open a folder or a file in Notepad, and toolbar buttons for New folder, Rename, Delete and Copy/Paste.
+- Notepad can save into a folder (type a path like `docs/notes.txt`) and its Open dialog can browse folders.
+- The Terminal's `ls`, `cat`, `rm` and `write` commands take paths. After you `mkdir` in the Terminal, Files refreshes its list when you look at it.
+
+## Browser (Vega)
+- A pages browser with built-in `leo://` pages (Home, What's new, Apps, Terminal tips, Files, and more), Back, Forward and Home, an address bar, and scrolling by dragging or the arrow keys.
+- `file:` links open a page you wrote in Notepad, including files that live in a folder.
+- Real `http://` addresses show a friendly "No internet yet" page: LeoOS still has no network driver.
+
+## Games
+- **2048** (Luna): merge the tiles on a 4×4 board. Swipe, use the arrow keys or WASD, or tap the on-screen pad. N or New starts again.
+- **Deep Dive** (Luna): a little underwater game inspired by Subnautica. Swim with the mouse or the arrow keys, collect fish, dodge jellyfish and surface for air. Oxygen drains faster the deeper you go.
+- **Tetris** (Starlink): a classic 10×20 well with a 7-bag randomiser, next-piece preview, ghost piece, score and level. Arrow keys or WASD, or a tap-friendly side pad. Space hard-drops; P pauses; N starts a new game.
+
+## Terminal commands (Astra)
+- New commands: `pwd`, `cd`, `mkdir`, `rmdir`, `tree`, `touch`, `cp`, `mv`, `wc`, `head`, `grep`, `date`, `time`, `whoami`, `hostname`, `uname`, `neofetch`, `open` (and shortcuts such as `snake`, `tetris`, `files`, `browser`), `fortune` and `cowsay`.
+- `cp` and `mv` use the filesystem's copy and rename, so `cp a.txt docs` and `mv a.txt docs` work.
+- The prompt shows the current folder: `leo@leoos:~$` at `/`, or `leo@leoos:/docs$` inside a folder.
+- `date` reads the CMOS real-time clock. `help` is paged (`help` then `help 2`) so the longer list fits the 25-line Terminal.
+
+## Thanks
+Built together for Leo. Nova did the folders and the Files app, and put the release together. Luna wrote 2048 and Deep Dive (and Minesweeper in 0.3). Vega wrote the Browser. Astra wrote the new terminal commands. Starlink wrote Tetris.
+
 # LeoOS 0.3.1 – Fixes
 
 Starlink tested 0.3 on the live site and found three problems. They're all fixed:

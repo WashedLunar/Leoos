@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0f4d22">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Crect width=%2216%22 height=%2216%22 rx=%223%22 fill=%22%232fa84f%22/%3E%3Ccircle cx=%228%22 cy=%228%22 r=%224%22 fill=%22%23f5d02a%22/%3E%3C/svg%3E">
-<title>LeoOS 0.3.1 – in your browser</title>
+<title>LeoOS 0.4 – in your browser</title>
 <style>
   :root { --g1:#3db85c; --g2:#0b471e; --g3:#17702f; --ink:#eaffef; }
   * { box-sizing: border-box; }
@@ -43,7 +43,7 @@
 </head>
 <body>
 <header>
-  <h1>Leo<span>OS</span> 0.3.1</h1>
+  <h1>Leo<span>OS</span> 0.4</h1>
   <p>A tiny hobby operating system, running in an x86 emulator in your browser</p>
 </header>
 
@@ -72,12 +72,13 @@
   <ul>
     <li><b>Tap</b> to click. <b>Drag</b> with your finger to move windows or draw in Paint.</li>
     <li>Tap <b>Keyboard</b> to type into the window you last tapped (Terminal, Notepad or Calculator).</li>
+    <li><b>New in 0.4:</b> a <b>Files</b> app (folders, rename, delete, copy), a <b>Browser</b> for pages inside LeoOS,
+        and three new games: <b>2048</b>, <b>Deep Dive</b> and <b>Tetris</b>. The Terminal has <code>mkdir</code>, <code>cd</code>, <code>neofetch</code> and many more; type <code>help</code>.</li>
     <li><b>New in 0.3:</b> each window has a <b>_</b> button to minimise it. Tap its button on the taskbar to bring it back.
-        Drag the green corner tab to resize Terminal, Paint or Notepad.</li>
-    <li><b>Snake:</b> tap the big green arrows next to the board (or tap the board on the side you want to turn to).
-        On a computer, use the arrow keys or WASD. The walls wrap round, so only biting your own tail ends the game. Tap <b>New game</b> to play again.</li>
-    <li><b>Minesweeper:</b> tap a square to dig. Turn on <b>Flag</b> to place flags by tapping, and tap the smiley to start a new game.</li>
-    <li><b>Notepad</b> can Save and Open files. Then try <code>ls</code>, <code>cat notes.txt</code> and <code>rm</code> in the Terminal.
+        Drag the green corner tab to resize Terminal, Paint, Notepad, Files or Browser.</li>
+    <li><b>Games:</b> Snake (walls wrap; tap the arrows or the board), Minesweeper (Flag button for taps), 2048 (swipe or the on-screen pad),
+        Deep Dive (hold where you want to swim) and Tetris (side pad, or arrow keys / WASD).</li>
+    <li><b>Notepad</b> can Save and Open files, including in folders. Try <code>ls docs</code> and <code>cat docs/welcome.txt</code> in the Terminal.
         Files live in memory, so they're gone when you restart.</li>
     <li>On a computer you can just use your mouse and keyboard. LeoOS boots in a few seconds.</li>
   </ul>

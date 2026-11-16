@@ -1,4 +1,4 @@
-# LeoOS 0.3.1 in the browser
+# LeoOS 0.4 in the browser
 
 This static site runs [LeoOS](../leo-os) in the browser using the [v86](https://github.com/copy/v86) x86 emulator,
 on a phone or a computer. There's no server-side code. It boots the real `leo-os.iso` as a CD-ROM with 128 MB RAM, and GRUB sets the same
@@ -22,6 +22,9 @@ You can't open `index.html` straight from disk with `file://`: the browser needs
 - **Snake:** tap the on-screen arrows next to the board, or tap the board on the side you want to turn to (arrow keys or WASD on a computer). The walls wrap round
 - **Minesweeper:** tap to dig, turn on **Flag** to place flags by tapping (right-click on a computer), and tap the smiley for a new game
 - **Windows:** the **_** button minimises a window and its taskbar button brings it back. Drag the green corner tab to resize
+- **Files:** browse folders, double-tap a file to open it in Notepad, or use New folder, Rename, Delete and Copy
+- **Browser:** built-in LeoOS pages and notes you save in Notepad. Real websites are not available yet
+- **2048 / Deep Dive / Tetris:** on-screen pads for phones; arrow keys or WASD on a computer
 
 ## Live site
 
@@ -32,9 +35,9 @@ GitHub Pages serves this repo's `main` branch at https://washedlunar.github.io/L
 | Path | What |
 |---|---|
 | `index.html` | the page: emulator setup, touch→PS/2 mouse, on-screen keyboard, buttons |
-| `leo-os.iso` | LeoOS 0.3.1 (built from `source/`) |
-| `source/` | the LeoOS 0.3.1 source code: C kernel, NASM boot stub, Makefile and its README (build it with `make`) |
-| `CHANGELOG.md` | what's new in 0.3 and 0.3.1 |
+| `leo-os.iso` | LeoOS 0.4 (built from `source/`) |
+| `source/` | the LeoOS 0.4 source code: C kernel, NASM boot stub, Makefile and its README (build it with `make`) |
+| `CHANGELOG.md` | what's new in 0.4, 0.3.1 and 0.3 |
 | `v86/libv86.js`, `v86/v86.wasm` | v86 emulator (BSD-2-Clause, see `v86/LICENSE`) |
 | `bios/seabios.bin`, `bios/vgabios.bin` | SeaBIOS and VGA BIOS (LGPL) from the v86 repo |
 | `screenshots/` | screenshots of the site running in headless Chrome |

@@ -1,12 +1,25 @@
-# LeoOS 0.3.1
-
-> In this repo the prebuilt ISO is one folder up, at [`../leo-os.iso`](../leo-os.iso). To play it in your browser, go to https://washedlunar.github.io/Leoos/
+# LeoOS 0.4
 
 LeoOS is a small hobby operating system for 32-bit x86 PCs, written from scratch in C
 with a little NASM assembly. It boots into a **green desktop**. It has windows you can drag, minimise and resize,
-a mouse, a taskbar with a Start menu, and seven apps, including two games. The 0.1 text-mode shell is still in the GRUB menu.
+a mouse, a taskbar with a Start menu, and a dozen apps, including five games. The 0.1 text-mode shell is still in the GRUB menu.
 
-![LeoOS 0.3 desktop](screenshots/20-desktop-0.3.png)
+![LeoOS 0.4 desktop](screenshots/49-desktop-0.4.png)
+
+## What's new in 0.4
+
+- **Folders and a Files app** (Nova): the RAM filesystem now has directories, a current folder, and paths such as `docs/welcome.txt`. The new **Files** app works like a small File Explorer: path bar, Up, folder and file icons, double-click to open a folder or a file in Notepad, plus New folder, Rename, Delete and Copy/Paste. Notepad can save into a folder. `ls`, `cat`, `rm` and `write` take paths too
+- **Browser** (Vega): a pages browser with built-in `leo://` pages, Back/Forward/Home, an address bar, and `file:` links that open notes you saved — including files in a folder. Real websites show a friendly "No internet yet" page
+- **2048 and Deep Dive** (Luna): 2048 has swipe, arrow keys and an on-screen pad. Deep Dive is a little underwater game: swim with the mouse or keys, collect fish, dodge jellyfish and watch your oxygen
+- **Tetris** (Starlink): a classic 10×20 well with a 7-bag randomiser, next-piece preview, ghost piece, score and level, and a tap-friendly side pad
+- **New terminal commands** (Astra): `pwd`, `cd`, `mkdir`, `rmdir`, `tree`, `touch`, `cp`, `mv`, `wc`, `head`, `grep`, `date`, `time`, `whoami`, `hostname`, `uname`, `neofetch`, `open` (and app shortcuts), `fortune` and `cowsay`. The prompt shows the current folder. Type `help` then `help 2` to see every command (the list is paged so it fits the 25-line Terminal)
+
+| | |
+|---|---|
+| ![Files](screenshots/40-files-folders.png) | ![file in Notepad](screenshots/41-files-notepad.png) |
+| ![2048](screenshots/50-2048.png) | ![Deep Dive](screenshots/51-deep-dive.png) |
+| ![Browser](screenshots/52-browser.png) | ![Tetris](screenshots/54-tetris.png) |
+| ![neofetch](screenshots/53-neofetch.png) | ![ls in a folder](screenshots/42-ls-subfolder.png) |
 
 ## What's new in 0.3.1 (fixes from Starlink's testing)
 
@@ -68,7 +81,7 @@ a mouse, a taskbar with a Start menu, and seven apps, including two games. The 0
   - **Paint**: 12 colours, 3 brush sizes and Clear. Drag to draw
   - **Notepad**: type text with word-wrap and backspace
   - **About LeoOS**: version, screen size and memory
-- **Boot menu:** GRUB waits 3 seconds. Pick *LeoOS 0.3 (classic text-mode shell)* to get the original text-mode OS
+- **Boot menu:** GRUB waits 3 seconds. Pick *LeoOS 0.4 (classic text-mode shell)* to get the original text-mode OS
 
 | | |
 |---|---|
@@ -184,10 +197,16 @@ leo-os/
 │   ├── font8x16.c           8x16 bitmap font (generated from Spleen)
 │   ├── mouse.c              PS/2 mouse on IRQ12
 │   ├── gui.c                desktop, window manager, taskbar, Start menu, event loop
-│   ├── apps.c               Terminal, Calculator, Paint, Notepad (New/Open/Save), About
+│   ├── apps.c               Terminal, Calculator, Paint, Notepad, About, and app registry
+│   ├── files.c              Files app (0.4)
+│   ├── browser.c            pages browser by Vega (0.4)
 │   ├── snake.c              Snake game (0.3)
 │   ├── minesweeper.c        Minesweeper game by Luna (0.3)
-│   ├── ramfs.c              RAM filesystem used by Notepad and ls/cat/rm/write (0.3)
+│   ├── game2048.c           2048 by Luna (0.4)
+│   ├── deepdive.c           Deep Dive by Luna (0.4)
+│   ├── tetris.c             Tetris by Starlink (0.4)
+│   ├── ramfs.c              RAM filesystem with folders (0.4)
+│   ├── shell2.c             extra terminal commands by Astra (0.4)
 │   └── string.c             tiny freestanding libc pieces (strlen, memcpy, itoa…)
 ├── tools/qemu_drive.py      drives a headless QEMU over its monitor (sendkey and screendump)
 ├── tools/qemu_test.py       the same, plus mouse clicks, right-clicks and drags (0.3)
@@ -215,17 +234,16 @@ The text-mode menu entry boots `leo-os-text.bin`. That is the same code, built w
 ## Limitations
 
 - Each app has one window
-- Files live only in RAM (no disk driver yet), so they are lost on restart. There are no folders, and there's a maximum of 16 files of up to 4000 bytes each
+- Files live only in RAM (no disk driver yet), so they are lost on restart. There are folders now, and a maximum of 32 slots (files and folders) of up to 4000 bytes each
 - Calculator works in whole numbers only. Notepad can only add or delete text at the end (there's no cursor movement yet)
 - A Terminal window that's smaller than 80x25 shows the part around the cursor instead of re-wrapping lines
 - Snake and Minesweeper don't keep high scores after a restart
 - The desktop needs a 32-bit colour VBE mode (QEMU, VirtualBox and Bochs have one). If GRUB can't provide it, LeoOS falls back to text mode
 - No paging, heap, filesystem, user mode or multitasking yet
 
-## Ideas for 0.3
+## Ideas for later
 
-A RAM-disk filesystem so Notepad can save, a heap allocator, resizable windows, a Snake or Minesweeper game,
-a CMOS real-time clock in the taskbar.
+A network card driver and real internet in the Browser, a disk driver so files survive a restart, a heap allocator, and user-mode programs.
 
 ## Screenshots from 0.1 (text mode)
 

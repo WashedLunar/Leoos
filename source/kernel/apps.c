@@ -10,6 +10,11 @@
 #include "ramfs.h"
 #include "snake.h"
 #include "minesweeper.h"
+#include "files.h"
+#include "browser.h"
+#include "game2048.h"
+#include "deepdive.h"
+#include "tetris.h"
 
 static const uint32_t vga_palette[16] = {
     0x000000, 0x0000AA, 0x00AA00, 0x00AAAA, 0xAA0000, 0xAA00AA, 0xAA5500, 0xAAAAAA,
@@ -274,15 +279,18 @@ static void paint_icon(int x, int y) {
 #define NOTE_BAR 34                       /* toolbar: New, Open, Save + file name */
 static char note[NOTE_MAX + 1];
 static int note_len;
-static char note_name[FS_NAME_MAX];       /* "" = untitled */
+static char note_name[FS_PATH_MAX];       /* "" = untitled; may be a path such as /docs/a.txt */
 static bool note_dirty;
 enum { NOTE_EDIT, NOTE_SAVE, NOTE_OPEN };
 static int note_mode, note_pressed = -1;
-static char note_input[FS_NAME_MAX];      /* file name being typed in the Save box */
+static char note_input[FS_PATH_MAX];      /* file name / path being typed in the Save box */
 static bool note_input_fresh;             /* suggested name is "selected": typing replaces it */
 static const char *note_msg;              /* short status message, e.g. "Saved!" */
 static uint32_t note_msg_until;
-static int note_open_files[FS_MAX_FILES], note_open_count;
+static char note_browse[FS_PATH_MAX];     /* folder shown in the Open dialog */
+struct note_ent { char name[FS_NAME_MAX]; bool is_dir, up; int size; };
+static struct note_ent note_ents[FS_MAX_FILES + 1];
+static int note_open_count;
 
 static const char *note_btn_label[3] = { "New", "Open", "Save" };
 static void note_btn_rect(int i, int *x, int *y, int *w, int *h) { *x = 6 + i * 62; *y = 5; *w = 56; *h = 24; }
@@ -332,10 +340,12 @@ static void note_draw(int x, int y, int w, int h, bool focused) {
         gfx_bevel(x + bx, y + by, bw, bh, i == 2 ? RGB(0x3B, 0xB0, 0x5A) : 0xF2F2F2, note_pressed == i);
         center_text(x + bx, bw, y + by + 4, note_btn_label[i], i == 2 ? 0xFFFFFF : TEXT_DARK, 1);
     }
-    char title[FS_NAME_MAX + 4];
+    char title[FS_PATH_MAX + 4];
     strcpy(title, note_name[0] ? note_name : "untitled");
     if (note_dirty) strcpy(title + strlen(title), " *");
+    gfx_set_clip(x + 196, y, w - 200, NOTE_BAR);
     gfx_text(x + 196, y + 9, title, TEXT_DARK, TRANSPARENT, 1);
+    gfx_set_clip(x, y, w, h);
     if (note_msg && timer_ticks() < note_msg_until) {
         int tw = (int)strlen(note_msg) * FONT_W;
         gfx_text(x + w - tw - 10, y + 9, note_msg, RGB(0x1C, 0x75, 0x36), TRANSPARENT, 1);
@@ -358,21 +368,29 @@ static void note_draw(int x, int y, int w, int h, bool focused) {
         gfx_text(x + dx + 12, y + dy + 34, "File name:", TEXT_DARK, TRANSPARENT, 1);
         gfx_fill(x + dx + 100, y + dy + 30, dw - 112, 24, 0xFFFFFF);
         gfx_rect(x + dx + 100, y + dy + 30, dw - 112, 24, RGB(0x6C, 0x9C, 0x78));
+        gfx_set_clip(x + dx + 102, y + dy + 30, dw - 116, 24);
         if (note_input_fresh) {
             gfx_fill(x + dx + 105, y + dy + 33, (int)strlen(note_input) * FONT_W + 2, FONT_H + 2, RGB(0x2F, 0xA8, 0x4F));
             gfx_text(x + dx + 106, y + dy + 34, note_input, 0xFFFFFF, TRANSPARENT, 1);
         } else gfx_text(x + dx + 106, y + dy + 34, note_input, TEXT_DARK, TRANSPARENT, 1);
         if (blink_on()) gfx_fill(x + dx + 106 + (int)strlen(note_input) * FONT_W, y + dy + 34, 2, FONT_H, TEXT_DARK);
-        gfx_text(x + dx + 12, y + dy + 62, "Kept in RAM - lost on restart", RGB(0x60, 0x80, 0x68), TRANSPARENT, 1);
+        gfx_set_clip(x + dx, y + dy, dw, dh);
+        gfx_text(x + dx + 12, y + dy + 62, "Paths work too, e.g. docs/notes.txt", RGB(0x60, 0x80, 0x68), TRANSPARENT, 1);
     } else if (!note_open_count) {
-        gfx_text(x + dx + 12, y + dy + 36, "No saved files yet.", TEXT_DARK, TRANSPARENT, 1);
+        gfx_text(x + dx + 12, y + dy + 36, "This folder is empty.", TEXT_DARK, TRANSPARENT, 1);
     } else {
+        gfx_set_clip(x + dx + 10, y + dy + 5, dw - 20, 16);
+        gfx_text(x + dx + 10, y + dy + 5, note_browse, 0xFFFFFF, TRANSPARENT, 1);
+        gfx_set_clip(x + dx, y + dy, dw, dh);
         for (int i = 0; i < note_open_count; i++) {
-            int f = note_open_files[i], ry = dy + 32 + i * 30;
+            int ry = dy + 32 + i * 30;
             gfx_bevel(x + dx + 10, y + ry, dw - 20, 26, RGB(0xE4, 0xF2, 0xE7), false);
-            gfx_text(x + dx + 18, y + ry + 5, fs_name(f), TEXT_DARK, TRANSPARENT, 1);
-            char num[16]; utoa((uint32_t)fs_size(f), num, 10); strcpy(num + strlen(num), " B");
-            gfx_text(x + dx + dw - 20 - (int)strlen(num) * FONT_W - 8, y + ry + 5, num, RGB(0x60, 0x80, 0x68), TRANSPARENT, 1);
+            gfx_text(x + dx + 18, y + ry + 5, note_ents[i].name, TEXT_DARK, TRANSPARENT, 1);
+            const char *right;
+            char num[16];
+            if (note_ents[i].is_dir) right = "folder";
+            else { utoa((uint32_t)note_ents[i].size, num, 10); strcpy(num + strlen(num), " B"); right = num; }
+            gfx_text(x + dx + dw - 20 - (int)strlen(right) * FONT_W - 8, y + ry + 5, right, RGB(0x60, 0x80, 0x68), TRANSPARENT, 1);
         }
     }
     for (int i = note_mode == NOTE_SAVE ? 0 : 1; i < 2; i++) {
@@ -383,18 +401,84 @@ static void note_draw(int x, int y, int w, int h, bool focused) {
 }
 
 static void note_do_save(void) {
-    if (!fs_valid_name(note_input)) { note_status("Bad name: use a-z 0-9 . _ -"); return; }
+    if (!note_input[0] || !fs_valid_path(note_input)) { note_status("Bad name: use a-z 0-9 . _ - /"); return; }
     int r = fs_write(note_input, note, note_len);
     if (r == -1) { note_status("Disk full - rm a file"); return; }
-    strcpy(note_name, note_input);
+    if (r == -3) { note_status("Folder not found"); return; }
+    if (r == -4) { note_status("That's a folder"); return; }
+    if (r < 0) { note_status("Bad name: use a-z 0-9 . _ - /"); return; }
+    int i = fs_find(note_input);
+    if (i >= 0) fs_path(i, note_name, FS_PATH_MAX);
+    else strcpy(note_name, note_input);
     note_dirty = false; note_mode = NOTE_EDIT;
     note_status("Saved!");
 }
 
-static void note_open_list(void) {
+static void note_collect(const char *name, bool is_dir, int size, void *ctx) {
+    (void)ctx;
+    if (note_open_count >= FS_MAX_FILES + 1) return;
+    strcpy(note_ents[note_open_count].name, name);
+    note_ents[note_open_count].is_dir = is_dir;
+    note_ents[note_open_count].up = false;
+    note_ents[note_open_count].size = size;
+    note_open_count++;
+}
+
+static void note_refresh_browse(void) {
     note_open_count = 0;
-    for (int i = 0; i < fs_count(); i++) if (fs_used(i)) note_open_files[note_open_count++] = i;
+    if (strcmp(note_browse, "/")) {
+        strcpy(note_ents[0].name, "..");
+        note_ents[0].is_dir = true;
+        note_ents[0].up = true;
+        note_ents[0].size = 0;
+        note_open_count = 1;
+    }
+    int first = note_open_count;
+    fs_list(note_browse, note_collect, NULL);
+    for (int i = first; i < note_open_count; i++)
+        for (int j = i + 1; j < note_open_count; j++) {
+            int cmp = 0;
+            if (note_ents[i].is_dir != note_ents[j].is_dir) cmp = note_ents[i].is_dir ? -1 : 1;
+            else cmp = strcmp(note_ents[i].name, note_ents[j].name);
+            if (cmp > 0) {
+                struct note_ent tmp = note_ents[i];
+                note_ents[i] = note_ents[j]; note_ents[j] = tmp;
+            }
+        }
+}
+
+static void note_browse_up(void) {
+    if (!strcmp(note_browse, "/")) return;
+    int n = (int)strlen(note_browse);
+    while (n > 1 && note_browse[n - 1] != '/') n--;
+    if (n <= 1) strcpy(note_browse, "/");
+    else note_browse[n - 1] = 0;
+    note_refresh_browse();
+}
+
+static void note_open_list(void) {
+    int i = note_name[0] ? fs_find(note_name) : -1;
+    if (i >= 0) {
+        int p = fs_parent(i);
+        if (p > 0) fs_path(p, note_browse, FS_PATH_MAX);
+        else strcpy(note_browse, "/");
+    } else strcpy(note_browse, "/");
+    note_refresh_browse();
     note_mode = NOTE_OPEN;
+}
+
+void notepad_open(const char *path) {
+    int i = fs_find(path);
+    if (i < 0 || fs_slot_is_dir(i)) return;
+    char full[FS_PATH_MAX];
+    fs_path(i, full, FS_PATH_MAX);
+    int n = fs_read(full, note, NOTE_MAX);
+    if (n < 0) return;
+    note_len = n; note[n] = 0;
+    strcpy(note_name, full);
+    note_dirty = false; note_mode = NOTE_EDIT;
+    note_status("Opened");
+    gui_open_app(APP_NOTEPAD);
 }
 
 static void note_click(int lx, int ly) {
@@ -425,12 +509,18 @@ static void note_click(int lx, int ly) {
         for (int i = 0; i < note_open_count; i++) {
             int ry = dy + 32 + i * 30;
             if (lx >= dx + 10 && lx < dx + dw - 10 && ly >= ry && ly < ry + 26) {
-                int f = note_open_files[i];
-                strcpy(note_name, fs_name(f));
-                note_len = fs_read(note_name, note, NOTE_MAX);
-                if (note_len < 0) note_len = 0;
-                note_dirty = false; note_mode = NOTE_EDIT;
-                note_status("Opened");
+                if (note_ents[i].up) { note_browse_up(); return; }
+                if (note_ents[i].is_dir) {
+                    char next[FS_PATH_MAX];
+                    fs_join(next, FS_PATH_MAX, note_browse, note_ents[i].name);
+                    strcpy(note_browse, next);
+                    note_refresh_browse();
+                    return;
+                }
+                char full[FS_PATH_MAX];
+                fs_join(full, FS_PATH_MAX, note_browse, note_ents[i].name);
+                notepad_open(full);
+                note_mode = NOTE_EDIT;
                 return;
             }
         }
@@ -446,8 +536,9 @@ static void note_key(int c) {
         if (c == '\n') note_do_save();
         else if (c == 27) note_mode = NOTE_EDIT;
         else if (c == '\b') { if (n) note_input[n - 1] = 0; }
-        else if (n < FS_NAME_MAX - 1 && c < 0x100 &&
-                 ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-')) {
+        else if (n < FS_PATH_MAX - 1 && c < 0x100 &&
+                 ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+                  c == '.' || c == '_' || c == '-' || c == '/')) {
             note_input[n] = (char)c; note_input[n + 1] = 0;
         }
         return;
@@ -477,9 +568,9 @@ static void about_draw(int x, int y, int w, int h, bool focused) {
     center_text(x, w, y + 106, "Version " LEOOS_VERSION, TEXT_DARK, 2);
     center_text(x, w, y + 144, "A tiny 32-bit hobby operating system", TEXT_DARK, 1);
     center_text(x, w, y + 162, "built from scratch for Leo.", TEXT_DARK, 1);
-    center_text(x, w, y + 232, "New in 0.3: Snake, Minesweeper, saving files,", RGB(0x1C, 0x75, 0x36), 1);
-    center_text(x, w, y + 250, "minimise and resize. Files are kept in RAM", RGB(0x1C, 0x75, 0x36), 1);
-    center_text(x, w, y + 268, "only, so they are lost when you restart.", RGB(0x1C, 0x75, 0x36), 1);
+    center_text(x, w, y + 232, "New in 0.4: a Files app, folders, and more", RGB(0x1C, 0x75, 0x36), 1);
+    center_text(x, w, y + 250, "terminal path commands. Files are kept in", RGB(0x1C, 0x75, 0x36), 1);
+    center_text(x, w, y + 268, "RAM only, so they are lost when you restart.", RGB(0x1C, 0x75, 0x36), 1);
     strcpy(buf, "Screen: "); utoa((uint32_t)gfx_w, num, 10); strcpy(buf + strlen(buf), num);
     strcpy(buf + strlen(buf), " x "); utoa((uint32_t)gfx_h, num, 10); strcpy(buf + strlen(buf), num);
     strcpy(buf + strlen(buf), ", 32-bit colour");
@@ -520,12 +611,26 @@ const struct app apps[NAPPS] = {
     [APP_NOTEPAD]  = { "Notepad", 480, 300, 0xFFFFFF,
                        note_draw, note_click, NULL, note_release, note_key, note_icon,
                        .resizable = true, .min_w = 320, .min_h = 200 },
+    [APP_FILES]    = { "Files", FILES_W, FILES_H, FILES_BG,
+                       files_draw, files_click, NULL, files_release, files_key, files_icon,
+                       .resizable = true, .min_w = 420, .min_h = 240 },
+    [APP_BROWSER]  = { "Browser", BROWSER_W, BROWSER_H, BROWSER_BG,
+                       browser_draw, browser_click, browser_drag, browser_release, browser_key, browser_icon,
+                       .resizable = true, .min_w = 360, .min_h = 240 },
     [APP_SNAKE]    = { "Snake", SNAKE_W, SNAKE_H, SNAKE_BG,
                        snake_draw, snake_click, NULL, snake_release, snake_key, snake_icon,
                        .tick = snake_tick },
     [APP_MINES]    = { "Minesweeper", MINES_W, MINES_H, MINES_BG,
                        mines_draw, mines_click, NULL, mines_release, mines_key, mines_icon,
                        .rclick = mines_rclick },
+    [APP_2048]     = { "2048", G2048_W, G2048_H, G2048_BG,
+                       g2048_draw, g2048_click, g2048_drag, g2048_release, g2048_key, g2048_icon },
+    [APP_DIVE]     = { "Deep Dive", DIVE_W, DIVE_H, DIVE_BG,
+                       dive_draw, dive_click, dive_drag, dive_release, dive_key, dive_icon,
+                       .tick = dive_tick },
+    [APP_TETRIS]   = { "Tetris", TETRIS_W, TETRIS_H, TETRIS_BG,
+                       tetris_draw, tetris_click, NULL, tetris_release, tetris_key, tetris_icon,
+                       .tick = tetris_tick },
     [APP_ABOUT]    = { "About LeoOS", 400, 330, 0xF7FBF8,
                        about_draw, about_click, NULL, NULL, about_key, about_icon },
 };
@@ -534,6 +639,11 @@ void apps_init(void) {
     paint_clear();
     snake_init();
     mines_init();
+    files_init();
+    browser_init();
+    g2048_init();
+    dive_init();
+    tetris_init();
     strcpy(note, "Dear Leo,\n\nThis is Notepad on LeoOS " LEOOS_VERSION ". Type anything you like,\nthen tap Save. Open the Terminal and type 'ls' to see it!\n\n");
     note_len = (int)strlen(note);
     vga_use_buffer(term_cells);

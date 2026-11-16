@@ -6,6 +6,7 @@
 #include "string.h"
 #include "version.h"
 #include "ramfs.h"
+#include "shell2.h"
 
 #define LINE_MAX  128
 #define HIST_MAX  16
@@ -36,7 +37,10 @@ static void prompt(void) {
     vga_set_colour(LIGHT_GREEN, b); vga_puts("leo");
     vga_set_colour(WHITE, b);       vga_puts("@");
     vga_set_colour(LIGHT_CYAN, b);  vga_puts("leoos");
-    vga_set_colour(WHITE, b);       vga_puts(":~$ ");
+    vga_set_colour(WHITE, b);       vga_puts(":");
+    const char *cwd = fs_cwd();          /* 0.4: show the current folder, ~ for / */
+    vga_set_colour(LIGHT_BLUE, b);  vga_puts(strcmp(cwd, "/") ? cwd : "~");
+    vga_set_colour(WHITE, b);       vga_puts("$ ");
     vga_set_colour(f, b);
 }
 
@@ -162,7 +166,8 @@ static void cmd_about(int argc, char **argv) {
              "  * PIT timer (100 Hz), PS/2 keyboard (UK/US), VGA text console\n"
              "  * This shell, with history (up/down arrows), Ctrl+L and Ctrl+C\n"
              "  * 0.2: a green desktop GUI with windows, mouse and apps\n"
-             "  * 0.3: minimise/resize, Snake, Minesweeper, files (ls, cat, rm)\n");
+             "  * 0.3: minimise/resize, Snake, Minesweeper, files (ls, cat, rm)\n"
+             "  * 0.4-dev: folders, the Files app, and path-aware ls/cat/rm/write\n");
 }
 
 static void cmd_colour(int argc, char **argv) {
@@ -271,22 +276,60 @@ static void cmd_history(int argc, char **argv) {
 
 
 /* ------------------------------------------------- files (RAM filesystem) */
+struct ls_ent { char name[FS_NAME_MAX]; bool is_dir; int size; };
+static struct ls_ent ls_ents[FS_MAX_FILES];
+static int ls_n;
+static void ls_collect(const char *name, bool is_dir, int size, void *ctx) {
+    (void)ctx;
+    if (ls_n >= FS_MAX_FILES) return;
+    strcpy(ls_ents[ls_n].name, name);
+    ls_ents[ls_n].is_dir = is_dir;
+    ls_ents[ls_n].size = size;
+    ls_n++;
+}
+
 static void cmd_ls(int argc, char **argv) {
-    (void)argc; (void)argv;
-    if (!fs_files()) { vga_puts("no files yet - save one from Notepad\n"); return; }
-    uint8_t f = vga_get_fg(), b = vga_get_bg();
-    for (int i = 0; i < fs_count(); i++) {
-        if (!fs_used(i)) continue;
+    const char *dir = argc > 1 ? argv[1] : fs_cwd();
+    int kind = fs_is_dir(dir);
+    if (kind == 0) {
+        /* ls of a single file: just print it */
+        int i = fs_find(dir);
+        uint8_t f = vga_get_fg(), b = vga_get_bg();
         vga_set_colour(LIGHT_CYAN, b); vga_puts("  "); vga_puts(fs_name(i));
         vga_set_colour(f, b);
         for (size_t n = strlen(fs_name(i)); n < 26; n++) vga_putc(' ');
         kprintf("%u bytes\n", (uint32_t)fs_size(i));
+        return;
     }
-    kprintf("%u file(s). Files live in RAM and are lost on restart.\n", (uint32_t)fs_files());
+    if (kind < 0) { kprintf("ls: %s: no such file or directory\n", dir); return; }
+    ls_n = 0;
+    fs_list(dir, ls_collect, NULL);
+    for (int i = 0; i < ls_n; i++)
+        for (int j = i + 1; j < ls_n; j++) {
+            int cmp = ls_ents[i].is_dir != ls_ents[j].is_dir ? (ls_ents[i].is_dir ? -1 : 1)
+                      : strcmp(ls_ents[i].name, ls_ents[j].name);
+            if (cmp > 0) { struct ls_ent tmp = ls_ents[i]; ls_ents[i] = ls_ents[j]; ls_ents[j] = tmp; }
+        }
+    if (!ls_n) { vga_puts("  (empty folder)\n"); return; }
+    uint8_t f = vga_get_fg(), b = vga_get_bg();
+    int nfiles = 0, ndirs = 0;
+    for (int i = 0; i < ls_n; i++) {
+        vga_set_colour(ls_ents[i].is_dir ? YELLOW : LIGHT_CYAN, b);
+        vga_puts("  "); vga_puts(ls_ents[i].name);
+        if (ls_ents[i].is_dir) vga_putc('/');
+        vga_set_colour(f, b);
+        size_t n = strlen(ls_ents[i].name) + (ls_ents[i].is_dir ? 1 : 0);
+        for (; n < 26; n++) vga_putc(' ');
+        if (ls_ents[i].is_dir) { vga_puts("<dir>\n"); ndirs++; }
+        else { kprintf("%u bytes\n", (uint32_t)ls_ents[i].size); nfiles++; }
+    }
+    kprintf("%u file(s), %u folder(s). Files live in RAM and are lost on restart.\n",
+            (uint32_t)nfiles, (uint32_t)ndirs);
 }
 
 static void cmd_cat(int argc, char **argv) {
     if (argc < 2) { vga_puts("usage: cat <file>   (type 'ls' to list files)\n"); return; }
+    if (fs_is_dir(argv[1]) == 1) { kprintf("cat: %s: is a directory\n", argv[1]); return; }
     static char buf[FS_DATA_MAX];
     int n = fs_read(argv[1], buf, FS_DATA_MAX);
     if (n < 0) { kprintf("cat: %s: no such file\n", argv[1]); return; }
@@ -297,7 +340,10 @@ static void cmd_cat(int argc, char **argv) {
 static void cmd_rm(int argc, char **argv) {
     if (argc < 2) { vga_puts("usage: rm <file>\n"); return; }
     for (int i = 1; i < argc; i++) {
-        if (fs_remove(argv[i]) < 0) kprintf("rm: %s: no such file\n", argv[i]);
+        int r = fs_remove(argv[i]);
+        if (r == -1) kprintf("rm: %s: no such file\n", argv[i]);
+        else if (r == -2) kprintf("rm: %s: directory not empty\n", argv[i]);
+        else if (r == -3) kprintf("rm: %s: cannot remove the root folder\n", argv[i]);
         else kprintf("removed %s\n", argv[i]);
     }
 }
@@ -312,8 +358,10 @@ static void cmd_write(int argc, char **argv) {
     }
     strcpy(buf + strlen(buf), "\n");
     int r = fs_write(argv[1], buf, (int)strlen(buf));
-    if (r == -2) vga_puts("write: bad file name (use letters, digits, . _ -)\n");
+    if (r == -2) vga_puts("write: bad file name (use letters, digits, . _ - and /)\n");
     else if (r == -1) vga_puts("write: the file system is full - rm something first\n");
+    else if (r == -3) vga_puts("write: folder not found\n");
+    else if (r == -4) vga_puts("write: that path is a folder\n");
     else kprintf("saved %s\n", argv[1]);
 }
 
@@ -322,7 +370,7 @@ void shell_command_shutdown(void) { cmd_shutdown(0, NULL); }
 
 struct command { const char *name; void (*fn)(int, char **); const char *help; };
 static const struct command commands[] = {
-    { "help",     cmd_help,     "show this list" },
+    { "help",     cmd_help,     "show this list (help 2 for the next page)" },
     { "clear",    cmd_clear,    "clear the screen (or press Ctrl+L)" },
     { "echo",     cmd_echo,     "print some text: echo hello leo" },
     { "uptime",   cmd_uptime,   "time since boot" },
@@ -332,10 +380,10 @@ static const struct command commands[] = {
     { "mem",      cmd_mem,      "show the memory map from the bootloader" },
     { "calc",     cmd_calc,     "integer calculator: calc (2 + 3) * 7" },
     { "kbd",      cmd_kbd,      "show/switch keyboard layout: kbd uk | kbd us" },
-    { "ls",       cmd_ls,       "list files (kept in RAM, lost on restart)" },
-    { "cat",      cmd_cat,      "show a file: cat readme.txt" },
-    { "rm",       cmd_rm,       "delete a file: rm notes.txt" },
-    { "write",    cmd_write,    "save text to a file: write todo.txt feed cat" },
+    { "ls",       cmd_ls,       "list files: ls  or  ls docs" },
+    { "cat",      cmd_cat,      "show a file: cat docs/welcome.txt" },
+    { "rm",       cmd_rm,       "delete a file: rm docs/notes.txt" },
+    { "write",    cmd_write,    "save text to a file: write docs/todo.txt feed cat" },
     { "history",  cmd_history,  "list recent commands (up/down to recall)" },
     { "reboot",   cmd_reboot,   "restart the machine" },
     { "shutdown", cmd_shutdown, "power off (in QEMU)" },
@@ -343,17 +391,37 @@ static const struct command commands[] = {
 #define NCOMMANDS (sizeof(commands) / sizeof(commands[0]))
 
 static void cmd_help(int argc, char **argv) {
-    (void)argc; (void)argv;
-    uint8_t f = vga_get_fg(), b = vga_get_bg();
-    vga_puts("LeoOS commands:\n");
+    /* Paged: builtin + Astra's shell2 commands. 'help' is page 1, 'help 2' the rest. */
+    const char *names[64], *helps[64];
+    int n = 0;
     for (size_t i = 0; i < NCOMMANDS; i++) {
         if (!commands[i].help) continue;
-        vga_set_colour(YELLOW, b);
-        vga_puts("  "); vga_puts(commands[i].name);
-        for (size_t n = strlen(commands[i].name); n < 10; n++) vga_putc(' ');
-        vga_set_colour(f, b);
-        vga_puts(commands[i].help); vga_putc('\n');
+        names[n] = commands[i].name; helps[n] = commands[i].help; n++;
     }
+    int n2 = shell2_cmd_count();
+    for (int i = 0; i < n2 && n < 64; i++) {
+        names[n] = shell2_cmd_name(i); helps[n] = shell2_cmd_help(i); n++;
+    }
+    int page = 1;
+    if (argc > 1 && argv[1][0] >= '1' && argv[1][0] <= '9') page = argv[1][0] - '0';
+    const int per = 20;
+    int pages = (n + per - 1) / per;
+    if (pages < 1) pages = 1;
+    if (page < 1) page = 1;
+    if (page > pages) page = pages;
+    uint8_t f = vga_get_fg(), b = vga_get_bg();
+    kprintf("LeoOS commands (page %d of %d):\n", page, pages);
+    int start = (page - 1) * per, end = start + per;
+    if (end > n) end = n;
+    for (int i = start; i < end; i++) {
+        vga_set_colour(YELLOW, b);
+        vga_puts("  "); vga_puts(names[i]);
+        for (size_t k = strlen(names[i]); k < 10; k++) vga_putc(' ');
+        vga_set_colour(f, b);
+        vga_puts(helps[i]); vga_putc('\n');
+    }
+    if (page < pages) kprintf("Type 'help %d' for more.\n", page + 1);
+    else if (pages > 1) vga_puts("Type 'help 1' to go back to the start.\n");
 }
 
 static void execute(char *cmdline) {
@@ -365,11 +433,12 @@ static void execute(char *cmdline) {
     size_t i;
     for (i = 0; i < NCOMMANDS; i++)
         if (!strcmp(argv[0], commands[i].name)) { commands[i].fn(argc, argv); break; }
-    if (i == NCOMMANDS) kprintf("%s: command not found (try 'help')\n", argv[0]);
+    if (i == NCOMMANDS && !shell2_run(argc, argv)) kprintf("%s: command not found (try 'help')\n", argv[0]);
 }
 
 void shell_init(struct multiboot_info *mbi, bool mb_valid) {
     mb = mbi; mb_ok = mb_valid;
+    shell2_init(mbi, mb_valid);
     len = 0; hist_pos = hist_count;
     prompt();
 }

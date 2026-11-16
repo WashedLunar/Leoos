@@ -3,7 +3,7 @@
 #include "types.h"
 #include "multiboot.h"
 
-enum { APP_TERMINAL, APP_CALC, APP_PAINT, APP_NOTEPAD, APP_SNAKE, APP_MINES, APP_ABOUT, NAPPS };
+enum { APP_TERMINAL, APP_CALC, APP_PAINT, APP_NOTEPAD, APP_FILES, APP_BROWSER, APP_SNAKE, APP_MINES, APP_2048, APP_DIVE, APP_TETRIS, APP_ABOUT, NAPPS };
 
 /* Every app gets one window. Coordinates passed to click/drag are relative to
  * the window's client area; draw() receives the client rect in screen space
@@ -31,6 +31,7 @@ extern struct multiboot_info *gui_mbi;
 
 void gui_run(struct multiboot_info *mbi);
 void gui_open_app(int app);
+void notepad_open(const char *path);   /* load a file in Notepad and raise the window */
 void gui_close_app(int app);
 void gui_client_size(int app, int *w, int *h);   /* current client size of an app's window */
 void apps_init(void);
