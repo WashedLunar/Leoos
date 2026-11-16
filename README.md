@@ -1,4 +1,4 @@
-# LeoOS 0.2 in the browser
+# LeoOS 0.3 in the browser
 
 This static site runs [LeoOS](../leo-os) in the browser using the [v86](https://github.com/copy/v86) x86 emulator,
 on a phone or a computer. There's no server-side code. It boots the real `leo-os.iso` as a CD-ROM with 128 MB RAM, and GRUB sets the same
@@ -19,20 +19,24 @@ You can't open `index.html` straight from disk with `file://`: the browser needs
 - **Phone:** tap to click, drag to move windows or draw in Paint. Tap **Keyboard** to open the phone's keyboard and type into the
   focused window. **Fullscreen** uses the Fullscreen API where it exists, or a full-page layout on iPhone. **Restart** reboots the VM
 - **Computer:** use the mouse and keyboard on the screen as usual
+- **Snake:** tap the on-screen arrows next to the board, or tap the board on the side you want to turn to (arrow keys or WASD on a computer)
+- **Minesweeper:** tap to dig, turn on **Flag** to place flags by tapping (right-click on a computer), and tap the smiley for a new game
+- **Windows:** the **_** button minimises a window and its taskbar button brings it back. Drag the corner grip to resize
 
-## Publish on GitHub Pages (when you're ready)
+## Live site
 
-The site is already laid out for Pages: `index.html` is at the root and there's a `.nojekyll` file. Push this repo to GitHub, then go to
-Settings → Pages → Deploy from branch → `main` / root.
+GitHub Pages serves this repo's `main` branch at https://washedlunar.github.io/Leoos/
 
 ## Files
 
 | Path | What |
 |---|---|
 | `index.html` | the page: emulator setup, touch→PS/2 mouse, on-screen keyboard, buttons |
-| `leo-os.iso` | LeoOS 0.2 (copied from `/workspace/leo-os/leo-os.iso`) |
+| `leo-os.iso` | LeoOS 0.3 (built from `source/`) |
+| `source/` | the LeoOS 0.3 source code: C kernel, NASM boot stub, Makefile and its README (build it with `make`) |
+| `CHANGELOG.md` | what's new in 0.3 |
 | `v86/libv86.js`, `v86/v86.wasm` | v86 emulator (BSD-2-Clause, see `v86/LICENSE`) |
 | `bios/seabios.bin`, `bios/vgabios.bin` | SeaBIOS and VGA BIOS (LGPL) from the v86 repo |
 | `screenshots/` | screenshots of the site running in headless Chrome |
 
-To update the OS, rebuild in `../leo-os` and copy the new `leo-os.iso` over the one here.
+To update the OS, run `make` in `source/` and copy the new `leo-os.iso` over the one here.
